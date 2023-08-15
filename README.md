@@ -19,6 +19,15 @@ This unit is based on Lolin32-lite board, with the firmware based on ESP-IDF fra
 - [esp-idf](https://github.com/espressif/esp-idf/releases/tag/v4.4.5) main framework
 - [arduino-esp32](https://github.com/espressif/arduino-esp32/releases/tag/2.0.11) arduino framework for esp32
 
+Currently, ESP-IDF 4.4.5 build system overrides C/C++ standard using `-std=gnu99` and `-std=gnu++11` flags.
+It happens into estp-idf/tools/cmake/build.cmake file. To avoid this, the following lines should be commented out:
+
+`list(APPEND c_compile_options   "-std=gnu99")`
+
+`list(APPEND cpp_compile_options "-std=gnu++11")`
+
+The patch file `fix_esp_idf_build.patch` is provided in the repository.
+
 ## Setup
 
 All parts of the unit are fixed on frame and covered by external cover. The frame is designed to fit the Lolin32-lite board, switch, step-up converter, BME280 and SPS30 sensors. It's attached to battery case and the whole module is placed into the external cover. The fame and cover parts are 3D printed.
