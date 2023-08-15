@@ -43,11 +43,11 @@ bool wakeUp = false;
 void setup()
 {
     wakeUp = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
-    Serial.begin(115200, SERIAL_8N1, AppConfig::Serial1RxPin, AppConfig::Serial1TxPin);
+    Serial.begin(115200, SERIAL_8N1, AppConfig::serial1RxPin, AppConfig::serial1TxPin);
     DEBUG_LOG((wakeUp ? "Woke up after sleep" : "Initial startup"))
-    Serial2.begin(115200, SERIAL_8N1, AppConfig::Serial2RxPin, AppConfig::Serial2TxPin);
+    Serial2.begin(115200, SERIAL_8N1, AppConfig::serial2RxPin, AppConfig::serial2TxPin);
     Wire.begin(AppConfig::SDA, AppConfig::SCL);
-    driversHolder.emplace(Wire, Serial2, AppConfig::BME280Address);
+    driversHolder.emplace(Wire, Serial2, AppConfig::bme280Address);
     if (!driversHolder->controller.setup(wakeUp)) {
         DEBUG_LOG("Setup failed!");
     }
