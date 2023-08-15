@@ -1,0 +1,20 @@
+#include "AppConfig.h"
+
+// TODO: Change this to the MAC address of the indoor module
+const std::array<const uint8_t, 6> AppConfig::MacAddress = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
+const uint8_t AppConfig::BME280Address = 0x76;
+// Serial1: GPIO23 - RX, GPIO18 - TX
+const int8_t AppConfig::Serial1RxPin = GPIO_NUM_23;
+const int8_t AppConfig::Serial1TxPin = GPIO_NUM_18;
+// Serial2: GPIO27 - RX, GPIO26 - TX
+const int8_t AppConfig::Serial2RxPin = GPIO_NUM_27;
+const int8_t AppConfig::Serial2TxPin = GPIO_NUM_26;
+// I2C: GPIO33 - SDA, GPIO32 - SCL
+const int8_t AppConfig::SDA = GPIO_NUM_33;
+const int8_t AppConfig::SCL = GPIO_NUM_32;
+// GPIO4 - step up enable
+const int8_t AppConfig::StepUpPin = GPIO_NUM_12;
+// GPIO35 - input pin to read battery voltage
+const int8_t AppConfig::VoltagePin = GPIO_NUM_2;
+// Voltage divider ratio
+const float AppConfig::BatteryVoltageDivider = 0.6f;
