@@ -1,5 +1,7 @@
 #include "AppConfig.h"
 
+#include <hal/gpio_types.h>
+
 // TODO: Change this to the MAC address of the indoor module
 const std::array<const uint8_t, 6> AppConfig::MacAddress = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
 const uint8_t AppConfig::BME280Address = 0x76;
