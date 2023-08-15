@@ -29,14 +29,14 @@ RTC_DATA_ATTR int pm10{};
 RTC_DATA_ATTR uint16_t voltageRaw = 0;
 RTC_DATA_ATTR char sps30Serial[32];
 
-const auto &voltagePin = AppConfig::VoltagePin;
+const auto &voltagePin = AppConfig::voltagePin;
 constexpr float rawToVolts = 3.3f/4095;
 
 int attemptsCounter = 0;
 
 void initStepUpControl()
 {
-    const auto stepUpPin = (gpio_num_t)AppConfig::StepUpPin;
+    const auto stepUpPin = (gpio_num_t)AppConfig::stepUpPin;
     rtc_gpio_init(stepUpPin); //initialize the RTC GPIO port
     rtc_gpio_set_direction(stepUpPin, RTC_GPIO_MODE_OUTPUT_ONLY); //set the port to output only mode
     rtc_gpio_hold_dis(stepUpPin); //disable hold before setting the level
@@ -44,13 +44,13 @@ void initStepUpControl()
 
 void switchStepUpConversion(bool enable)
 {
-    const auto stepUpPin = (gpio_num_t)AppConfig::StepUpPin;
+    const auto stepUpPin = (gpio_num_t)AppConfig::stepUpPin;
     rtc_gpio_set_level(stepUpPin, enable ? HIGH : LOW);
 }
 
 void holdStepUpConversion()
 {
-    const auto stepUpPin = (gpio_num_t)AppConfig::StepUpPin;
+    const auto stepUpPin = (gpio_num_t)AppConfig::stepUpPin;
     rtc_gpio_hold_en(stepUpPin);
 }
 
@@ -138,7 +138,7 @@ uint32_t DustMonitorController::process()
     {
         needSend = false;
         view.updateView(meteoData.getHumidity(), meteoData.getTemperature(), meteoData.getPressure(), pm01, pm25,
-                        pm10, float(voltageRaw)*rawToVolts/AppConfig::BatteryVoltageDivider);
+                        pm10, float(voltageRaw)*rawToVolts/AppConfig::batteryVoltageDivider);
     }
     switch (view.getStatus())
     {

@@ -108,8 +108,8 @@ bool EspNowTransport::prepareEspNow() const
     // Register peer
     esp_now_peer_info_t peerInfo;
     memset(&peerInfo, 0, sizeof(peerInfo));
-    static_assert(sizeof(peerInfo.peer_addr) == sizeof(AppConfig::MacAddress), "MAC address size mismatch");
-    memcpy(peerInfo.peer_addr, AppConfig::MacAddress.begin(), AppConfig::MacAddress.size());
+    static_assert(sizeof(peerInfo.peer_addr) == sizeof(AppConfig::macAddress), "MAC address size mismatch");
+    memcpy(peerInfo.peer_addr, AppConfig::macAddress.begin(), AppConfig::macAddress.size());
     peerInfo.channel = 0;
     peerInfo.encrypt = false;
     peerInfo.ifidx = WIFI_IF_STA;
@@ -183,7 +183,7 @@ void EspNowTransport::updateView(float h, float t, float p, int p1, int p25, int
     {
         lastPacketMicroseconds = micros();
         lastPacketTimestamp = measurementDataMessage.timestamp;
-        auto result = esp_now_send(AppConfig::MacAddress.begin(), (uint8_t*)&measurementDataMessage,
+        auto result = esp_now_send(AppConfig::macAddress.begin(), (uint8_t*)&measurementDataMessage,
                                    sizeof(measurementDataMessage));
         if (result == ESP_OK)
         {

@@ -12,9 +12,9 @@ const int8_t AppConfig::Serial2TxPin = GPIO_NUM_26;
 // I2C: GPIO33 - SDA, GPIO32 - SCL
 const int8_t AppConfig::SDA = GPIO_NUM_33;
 const int8_t AppConfig::SCL = GPIO_NUM_32;
-// GPIO4 - step up enable
+// GPIO12 - step up enable
 const int8_t AppConfig::StepUpPin = GPIO_NUM_12;
-// GPIO35 - input pin to read battery voltage
+// GPIO2 - input pin to read battery voltage
 const int8_t AppConfig::VoltagePin = GPIO_NUM_2;
 // Voltage divider ratio
 const float AppConfig::BatteryVoltageDivider = 0.6f;
