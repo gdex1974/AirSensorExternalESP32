@@ -1,11 +1,11 @@
 #include "SPS30DataProvider.h"
-#include "Debug.h"
 
-#include <esp_attr.h>
+#include "PersistentStorage.h"
+#include "Debug.h"
 
 namespace
 {
-    RTC_DATA_ATTR uint32_t measurementsCounter;
+    constexpr std::string_view sps30DataKey = "SPSD";
 }
 
 using embedded::Sps30Error;
@@ -14,21 +14,27 @@ bool SPS30DataProvider::setup(bool wakeUp)
 {
     if (wakeUp)
     {
-        return true;
+        if (const auto storedData = storage.get<Data>(sps30DataKey); storedData)
+        {
+            data = *storedData;
+            DEBUG_LOG("Restored SPS30 data: " << (data.sensorPresent ? data.serialNumber.serial : "sensor not found"))
+            return data.sensorPresent;
+        }
+        DEBUG_LOG("SPS30 data is not found")
     }
-    measurementsCounter = 0;
     DEBUG_LOG("Probing SPS30")
     auto spsInitResult = sps30.probe();
     if (spsInitResult == Sps30Error::Success)
     {
-        spsInitResult = sps30.getSerial(serialNumber);
-        DEBUG_LOG("Serial number: " << serialNumber.serial)
+        spsInitResult = sps30.getSerial(data.serialNumber);
+        DEBUG_LOG("Serial number: " << data.serialNumber.serial)
         sps30.resetSensor();
         auto versionResult = sps30.getVersion();
         if (std::holds_alternative<embedded::Sps30VersionInformation>(versionResult))
         {
             const auto& sps30Version = std::get<embedded::Sps30VersionInformation>(versionResult);
             DEBUG_LOG("Firmware revision: " << (int) sps30Version.firmware_major << "." << (int) sps30Version.firmware_minor)
+            data.firmwareMajorVersion = sps30Version.firmware_major;
             if (sps30Version.shdlc)
             {
                 DEBUG_LOG("Hardware revision: " << (int)sps30Version.shdlc->hardware_revision)
@@ -38,27 +44,24 @@ bool SPS30DataProvider::setup(bool wakeUp)
         {
             DEBUG_LOG("Firmware revision reading failed with code: " << (int) spsInitResult)
         }
-        auto cleaningInterval = sps30.getFanAutoCleaningInterval();
-        if (std::holds_alternative<uint32_t>(cleaningInterval))
-        {
-            DEBUG_LOG("Cleaning interval: " << (int) std::get<uint32_t>(cleaningInterval))
-        }
-        else
-        {
-            DEBUG_LOG("Fan cleaning interval reading error: " << (int) std::get<Sps30Error>(cleaningInterval))
-        }
     }
     else
     {
         DEBUG_LOG("Probe is failed with code: " << (int)spsInitResult)
     }
-    return spsInitResult == Sps30Error::Success;
+    data.sensorPresent = spsInitResult == Sps30Error::Success;
+    storage.set(sps30DataKey, data);
+    return data.sensorPresent;
 }
 
 bool SPS30DataProvider::startMeasure()
 {
+    if (!data.sensorPresent)
+    {
+        return false;
+    }
     auto result =  sps30.startMeasurement(true) == Sps30Error::Success;
-    if (result && (measurementsCounter++ % 168 == 0))
+    if (result && (data.measurementsCounter++ % 168 == 0))
     {
         if (auto cleaningResult = sps30.startManualFanCleaning(); cleaningResult == Sps30Error::Success)
         {
@@ -74,17 +77,22 @@ bool SPS30DataProvider::startMeasure()
 
 bool SPS30DataProvider::wakeUp()
 {
-    return sps30.wakeUp() == Sps30Error::Success;
+    return data.firmwareMajorVersion > 1 && sps30.wakeUp() == Sps30Error::Success;
 }
 
 bool SPS30DataProvider::hibernate()
 {
-    sps30.stopMeasurement();
-    return sps30.sleep() == Sps30Error::Success;
+    storage.set(sps30DataKey, data);
+    DEBUG_LOG("SPS30 data saved")
+    return true;
 }
 
-bool SPS30DataProvider::getMeasureData(int &pm1, int &pm25, int &pm10)
+bool SPS30DataProvider::getMeasureData(uint16_t &pm1, uint16_t &pm25, uint16_t &pm10)
 {
+    if (!data.sensorPresent)
+    {
+        return false;
+    }
     const auto result = sps30.readMeasurement();
     if (std::holds_alternative<embedded::Sps30MeasurementData>(result))
     {
