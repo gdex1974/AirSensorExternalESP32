@@ -47,11 +47,11 @@ Connection schema:
   - `GND` connected to the GND pin of the board
   - `Enable` pin connected to the IO12 pin of the Lolin32-lite board (next to the GND pin)
   - `VIN` pin connected to the battery+ of the Lolin32-lite board
-  - `VOUT` pin connected to the + input of the step-up converter
+  - `VOUT` pin connected to the + input of the step-up converter.  Addtionally, it's connected to voltage divider (R1=220k, R2=330k) and the output of the divider is connected to the `IO2` pin of the board. This pin is used to measure the battery voltage.
 - step-up converter's is fixed into separated place on the frame
   - `+` input is connected to the VBAT pin of the Lolin32-lite board
   - `-` input is connected to the GND pin of the Lolin32-lite board
-  - `+` output is connected to the VCC pin of the SPS30 sensor
+  - `+` output is connected to the VCC pin of the SPS30 sensor.
 
 ## Firmware
 
@@ -69,4 +69,4 @@ The firmware is based on ESP-IDF framework (tested version is 4.4.5) and is writ
   - PTHProvider - contains the code for the class providing the data from BME280 sensor
   - SPS30DataProvider - contains the code for the class providing the data from SPS30 sensor
 - CMakeLists.txt - main CMake file for the firmware
-- sdkconfig - default configuration file for the esp-idf framework.
+- sdkconfig - default configuration file for the ESP-IDF framework.
