@@ -1,31 +1,29 @@
 #include "EspNowTransport.h"
 
-#include "Debug.h"
 #include "AppConfig.h"
+#include "TimeFunctions.h"
+
+#include "PersistentStorage.h"
+
 #include <esp_now.h>
 #include <WiFi.h>
 
+#include "Debug.h"
+
 namespace
 {
-RTC_DATA_ATTR float humidity = 0;
-RTC_DATA_ATTR float temperature = 0;
-RTC_DATA_ATTR float pressure = 0;
-RTC_DATA_ATTR int pm01 = 0;
-RTC_DATA_ATTR int pm2p5 = 0;
-RTC_DATA_ATTR int pm10 = 0;
-RTC_DATA_ATTR float voltage = 0;
 
 struct MeasurementDataMessage
 {
-    char spsSerial[32];
-    uint16_t pm01;
-    uint16_t pm25;
-    uint16_t pm10;
-    float humidity;
-    float temperature;
-    float pressure;
-    float voltage;
-    int64_t timestamp;
+    char spsSerial[32]{};
+    uint16_t pm01{};
+    uint16_t pm25{};
+    uint16_t pm10{};
+    float humidity{};
+    float temperature{};
+    float pressure{};
+    float voltage{};
+    int64_t timestamp{};
 };
 
 struct CorrectionMessage
@@ -47,6 +45,8 @@ volatile unsigned long lastPacketMicroseconds = 0;
 volatile int64_t lastPacketTimestamp = 0;
 volatile unsigned long responseMicroseconds = 0;
 volatile int64_t rtcCorrection = 0;
+
+constexpr std::string_view transportDataTag = "ESPN";
 
 void onDataSent(const uint8_t* /*macAddr*/, esp_now_send_status_t status)
 {
@@ -77,11 +77,8 @@ void onDataReceive(const uint8_t* /*mac_addr*/, const uint8_t* data, int data_le
 }
 }
 
-EspNowTransport::EspNowTransport() = default;
-
 bool EspNowTransport::setup(embedded::CharView sps30Serial, bool /*wakeUp*/)
 {
-    memset(measurementDataMessage.spsSerial, 0, sizeof(measurementDataMessage.spsSerial));
     memcpy(measurementDataMessage.spsSerial, sps30Serial.begin(),
            std::min(sizeof(measurementDataMessage.spsSerial), (std::size_t)sps30Serial.size()));
     return true;
@@ -125,63 +122,20 @@ bool EspNowTransport::prepareEspNow() const
     return true;
 }
 
-void EspNowTransport::updateView(float h, float t, float p, int p1, int p25, int p10, float batteryVoltage)
+void EspNowTransport::updateView(const EspNowTransport::Data &transportData)
 {
-    if (h != humidity)
-    {
-        humidity = h;
-        DEBUG_LOG("Humidity = " << humidity << "%")
-    }
+    measurementDataMessage.pm01 = transportData.pm01;
+    measurementDataMessage.pm25 = transportData.pm25;
+    measurementDataMessage.pm10 = transportData.pm10;
+    measurementDataMessage.pressure = transportData.pressure;
+    measurementDataMessage.humidity = transportData.humidity;
+    measurementDataMessage.temperature = transportData.temperature;
+    measurementDataMessage.voltage = transportData.batteryVoltage;
 
-    if (t != temperature)
-    {
-        temperature = t;
-        DEBUG_LOG("Temperature = " << temperature << " *C")
-    }
-
-    if (p != pressure)
-    {
-        pressure = p;
-        DEBUG_LOG("Pressure = " << pressure << " Pa")
-    }
-
-    if (p1 != pm01)
-    {
-        pm01 = p1;
-        DEBUG_LOG("PM1 = " << pm01)
-    }
-
-    if (p25 != pm2p5)
-    {
-        pm2p5 = p25;
-        DEBUG_LOG("PM2.5 = " << pm2p5)
-    }
-
-    if (p10 != pm10)
-    {
-        pm10 = p10;
-        DEBUG_LOG("PM10 = " << pm10)
-    }
-
-    if (voltage != batteryVoltage)
-    {
-        voltage = batteryVoltage;
-        DEBUG_LOG("Voltage = " << voltage)
-    }
-
-    measurementDataMessage.pm01 = pm01;
-    measurementDataMessage.pm25 = pm2p5;
-    measurementDataMessage.pm10 = pm10;
-    measurementDataMessage.pressure = pressure;
-    measurementDataMessage.humidity = humidity;
-    measurementDataMessage.temperature = temperature;
-    measurementDataMessage.voltage = batteryVoltage;
-    timeval tv {};
-    gettimeofday(&tv, nullptr);
-    measurementDataMessage.timestamp = microsecondsFromTimeval(tv);
     if (prepareEspNow())
     {
         lastPacketMicroseconds = micros();
+        measurementDataMessage.timestamp = microsecondsNow();
         lastPacketTimestamp = measurementDataMessage.timestamp;
         auto result = esp_now_send(AppConfig::macAddress.begin(), (uint8_t*)&measurementDataMessage,
                                    sizeof(measurementDataMessage));

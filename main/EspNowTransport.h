@@ -5,11 +5,21 @@
 
 class EspNowTransport {
 public:
+    struct Data
+    {
+        float humidity {};
+        float temperature {};
+        float pressure {};
+        int pm01 {};
+        int pm25 {};
+        int pm10 {};
+        float batteryVoltage {};
+    };
     enum class SendStatus {Idle, Requested, Failed, Awaiting, Completed};
 
-    EspNowTransport();
+    EspNowTransport() = default;
     bool setup(embedded::CharView sps30Serial, bool wakeUp);
-    void updateView(float h, float t, float p, int p1, int p25, int p10, float batteryVoltage);
+    void updateView(const Data& data);
     SendStatus getStatus() const;
     int64_t getCorrection() const;
 

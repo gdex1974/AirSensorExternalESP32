@@ -2,14 +2,17 @@
 
 #include "AppConfig.h"
 
-#include "PacketUart.h"
 #include "Delays.h"
-#include "Debug.h"
+#include "PacketUart.h"
+#include "PersistentStorage.h"
+
 #include "esp32-arduino/PacketUartImpl.h"
 #include "esp32-arduino/I2CBus.h"
 
 #include <Arduino.h>
-#include "Wire.h"
+#include <Wire.h>
+
+#include "Debug.h"
 
 namespace
 {
@@ -22,11 +25,11 @@ static_assert(std::is_base_of_v<HardwareSerial, embedded::PacketUart::UartDevice
 
 struct DriversHolder
 {
-    DriversHolder(TwoWire& wire, HardwareSerial& serial, int8_t address)
+    DriversHolder(embedded::PersistentStorage& storage, TwoWire& wire, HardwareSerial& serial, int8_t address)
         : i2CBus(wire)
         , i2CDevice(i2CBus, address)
         , uart2(static_cast<embedded::PacketUart::UartDevice&>(serial))
-        , controller(uart2, i2CDevice)
+        , controller(storage, uart2, i2CDevice)
     {
     }
     embedded::I2CBus i2CBus;
@@ -35,6 +38,8 @@ struct DriversHolder
     DustMonitorController controller;
 };
 
+RTC_DATA_ATTR std::array<uint8_t, 2048> persistentArray;
+std::optional<embedded::PersistentStorage> persistentStorage;
 std::optional<DriversHolder> driversHolder;
 
 bool wakeUp = false;
@@ -42,12 +47,15 @@ bool wakeUp = false;
 
 void setup()
 {
+    persistentStorage.emplace(persistentArray,esp_reset_reason() != ESP_RST_DEEPSLEEP);
     wakeUp = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
+#ifdef DEBUG_SERIAL_OUT
     Serial.begin(115200, SERIAL_8N1, AppConfig::serial1RxPin, AppConfig::serial1TxPin);
-    DEBUG_LOG((wakeUp ? "Woke up after sleep" : "Initial startup"))
+#endif
+    DEBUG_LOG((wakeUp ? "Wake up after sleep" : "Initial startup"))
     Serial2.begin(115200, SERIAL_8N1, AppConfig::serial2RxPin, AppConfig::serial2TxPin);
     Wire.begin(AppConfig::SDA, AppConfig::SCL);
-    driversHolder.emplace(Wire, Serial2, AppConfig::bme280Address);
+    driversHolder.emplace(*persistentStorage, Wire, Serial2, AppConfig::bme280Address);
     if (!driversHolder->controller.setup(wakeUp)) {
         DEBUG_LOG("Setup failed!");
     }
@@ -58,6 +66,7 @@ void loop()
     auto delayTime = driversHolder->controller.process();
     if (delayTime > 700)
     {
+        driversHolder->controller.hibernate();
         DEBUG_LOG("Going to deep sleep for " << delayTime << " ms")
         esp_sleep_enable_timer_wakeup(delayTime * 1000ll);
         esp_deep_sleep_start();

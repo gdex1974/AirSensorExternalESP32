@@ -17,6 +17,6 @@ const int8_t AppConfig::SCL = GPIO_NUM_32;
 // GPIO12 - step up enable
 const int8_t AppConfig::stepUpPin = GPIO_NUM_12;
 // GPIO2 - input pin to read battery voltage
-const int8_t AppConfig::voltagePin = GPIO_NUM_2;
+const uint8_t AppConfig::voltagePin = GPIO_NUM_2;
 // Voltage divider ratio
 const float AppConfig::batteryVoltageDivider = 0.6f;

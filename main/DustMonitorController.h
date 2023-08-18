@@ -9,20 +9,42 @@
 
 class DustMonitorController {
 public:
-    explicit DustMonitorController(embedded::PacketUart& uart, embedded::I2CHelper& i2CHelper)
-    : meteoData(i2CHelper)
-    , dustData(uart)
+    DustMonitorController(embedded::PersistentStorage& storage, embedded::PacketUart& uart, embedded::I2CHelper& i2CHelper)
+    : storage(storage)
+    , meteoData(storage, i2CHelper)
+    , dustData(storage, uart)
     {}
 
     bool setup(bool wakeUp);
     uint32_t process();
+    bool hibernate();
 
 private:
+    void processSPS30Measurement();
+
+
+    enum class SPS30Status
+    {
+        Startup,
+        Sleep,
+        Measuring,
+    };
+
+    struct ControllerData
+    {
+        SPS30Status sps30Status = SPS30Status::Startup;
+        int pm01{};
+        int pm25{};
+        int pm10{};
+        uint16_t voltageRaw = 0;
+        char sps30Serial[32] = {};
+        uint32_t wakeupCounter = 0;
+    } controllerData;
+    embedded::PersistentStorage& storage;
     PTHProvider meteoData;
     SPS30DataProvider dustData;
-    EspNowTransport view;
-    static bool needPMMeasure;
-    static uint32_t wakeupCounter;
+    EspNowTransport transport;
+    int attemptsCounter = 0;
     bool isMeasured = false;
     bool needSend = false;
 };

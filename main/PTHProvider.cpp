@@ -5,19 +5,42 @@
 
 #include <cmath>
 
+namespace
+{
+constexpr std::string_view calibrationDataName = "PTHD";
+}
+
 bool PTHProvider::activate() {
     return bme.startMeasurement();
 }
 
 bool PTHProvider::hibernate() {
+    if (!calibrationDataPresent)
+    {
+        bme.saveCalibrationData(storage, calibrationDataName);
+    }
     return bme.stopMeasurement();
 }
 
-bool PTHProvider::setup(bool /* wakeUp */)
+bool PTHProvider::setup(bool wakeUp)
 {
-    auto result = bme.init();
-    DEBUG_LOG("BME280 is initialized with the result:" << result)
-    return result == 0;
+    if (!wakeUp)
+    {
+        auto result = bme.init();
+        DEBUG_LOG("BME280 is initialized with the result:" << result)
+        return result == 0;
+    }
+    else
+    {
+        calibrationDataPresent = bme.loadCalibrationData(storage, calibrationDataName);
+        if (!calibrationDataPresent)
+        {
+            DEBUG_LOG("BME280 calibration data load failed, trying to initialize")
+            return setup(false);
+        }
+        DEBUG_LOG("BME280 calibration data loaded")
+    }
+    return true;
 }
 
 bool PTHProvider::doMeasure()

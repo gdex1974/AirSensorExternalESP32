@@ -2,21 +2,43 @@
 
 #include "SPS30/Sps30Uart.h"
 
+namespace embedded
+{
+class PersistentStorage;
+}
+
 class SPS30DataProvider
 {
 public:
-    explicit SPS30DataProvider(embedded::PacketUart& packetUart)
-    : sps30(packetUart)
+    SPS30DataProvider(embedded::PersistentStorage &storage, embedded::PacketUart& packetUart)
+    : sps30(packetUart), storage(storage)
     {
     }
 
     bool setup(bool wakeUp);
     bool startMeasure();
+    bool stopMeasure()
+    {
+        return data.sensorPresent && sps30.stopMeasurement() == embedded::Sps30Error::Success;
+    }
+
     bool wakeUp();
+    bool sleep()
+    {
+        return data.firmwareMajorVersion > 1 && sps30.sleep() == embedded::Sps30Error::Success;
+    }
+
     bool hibernate();
-    bool getMeasureData(int& pm1, int& pm25, int& pm10);
-    std::string_view getSpsSerial() const { return serialNumber.serial; }
+    bool getMeasureData(uint16_t &pm1, uint16_t &pm25, uint16_t &pm10);
+    std::string_view getSpsSerial() const { return data.serialNumber.serial; }
 private:
+    struct Data
+    {
+        uint32_t measurementsCounter = 0;
+        embedded::Sps30SerialNumber serialNumber {};
+        int16_t firmwareMajorVersion;
+        bool sensorPresent = false;
+    } data;
     embedded::Sps30Uart sps30;
-    embedded::Sps30SerialNumber serialNumber {};
+    embedded::PersistentStorage &storage;
 };

@@ -16,6 +16,6 @@ struct AppConfig
     static const int8_t SDA;
     static const int8_t SCL;
     static const int8_t stepUpPin;
-    static const int8_t voltagePin;
+    static const uint8_t voltagePin;
     static const float batteryVoltageDivider;
 };
