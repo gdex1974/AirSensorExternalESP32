@@ -46,6 +46,13 @@ bool PTHProvider::setup(bool wakeUp)
 bool PTHProvider::doMeasure()
 {
     while (bme.isMeasuring())
+    {
         embedded::delay(10);
-    return bme.getMeasureData(temperature, pressure, humidity);
+    }
+    if (auto fixedResult = bme.getMeasureData())
+    {
+        measurementData = *fixedResult;
+        return true;
+    }
+    return false;
 }
