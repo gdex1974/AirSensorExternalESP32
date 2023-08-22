@@ -50,12 +50,17 @@ inline int64_t microsecondsFromTimeval(const timeval &tv)
 }
 
 MeasurementDataMessage measurementDataMessage;
+
+union
+{
 CorrectionMessage correctionMessage;
+    std::array<uint8_t, sizeof(CorrectionMessage)> bytes;
+} correctionData;
 
 volatile EspNowTransport::SendStatus sendStatus = EspNowTransport::SendStatus::Idle;
-volatile unsigned long lastPacketMicroseconds = 0;
+volatile uint64_t lastPacketMicroseconds = 0;
 volatile int64_t lastPacketTimestamp = 0;
-volatile unsigned long responseMicroseconds = 0;
+volatile uint64_t responseMicroseconds = 0;
 volatile int64_t rtcCorrection = 0;
 
 constexpr std::string_view transportDataTag = "ESPN";
@@ -71,10 +76,10 @@ void onDataReceive(const uint8_t* /*mac_addr*/, const uint8_t* data, int data_le
 {
     if (data_len == sizeof(CorrectionMessage))
     {
-        responseMicroseconds = embedded::getMillisecondTicks();
-        memcpy(&correctionMessage, data, data_len);
-        const auto remoteReceivedTime = correctionMessage.receiveTime;
-        const auto remoteSentTime = correctionMessage.currentTime;
+        responseMicroseconds = embedded::getMicrosecondTicks();
+        memcpy(correctionData.bytes.begin(), data, data_len);
+        const auto &remoteReceivedTime = correctionData.correctionMessage.receiveTime;
+        const auto &remoteSentTime = correctionData.correctionMessage.currentTime;
         const auto remoteDelta = remoteSentTime - remoteReceivedTime;
         const auto localDelta = responseMicroseconds - lastPacketMicroseconds;
 

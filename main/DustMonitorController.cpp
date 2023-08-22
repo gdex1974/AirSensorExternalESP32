@@ -16,7 +16,7 @@
 namespace
 {
 constexpr int millisecondsInMinute = 60000;
-constexpr int bootEstimationMilliseconds = 500;
+constexpr int bootEstimationMicroseconds = 700000;
 
 constexpr float rawToVolts = 3.3f/4095;
 constexpr std::string_view controllerDataTag = "DMC";
@@ -141,8 +141,7 @@ uint32_t DustMonitorController::process()
                     .tv_sec = nowSeconds,
                     .tv_usec = static_cast<decltype(timeval::tv_usec)>(nowMicroseconds - nowSeconds * microsecondsInSecond)
                 };
-                timezone utcTimezone {0, 0};
-                settimeofday(&correctedTimeval, &utcTimezone);
+                settimeofday(&correctedTimeval, nullptr);
                 DEBUG_LOG("Time is corrected by " << correction << " us")
             }
             else
@@ -156,16 +155,19 @@ uint32_t DustMonitorController::process()
 
     auto nowMicroseconds = microsecondsNow();
     const int64_t wholeMinutePast = (nowMicroseconds/microsecondsInMinute)*microsecondsInMinute;
-    const int64_t nextWholeMinute = wholeMinutePast + microsecondsInMinute;
-    const auto microsecondsTillNextMinute = nextWholeMinute - nowMicroseconds;
+    const auto microsecondsTillNextMinute = wholeMinutePast + microsecondsInMinute - nowMicroseconds;
     const auto minimumDelay = (controllerData.sps30Status != SPS30Status::Measuring) ?
             microsecondsInSecond : 30 * microsecondsInSecond;
-    auto delay = (microsecondsTillNextMinute / 1000 - bootEstimationMilliseconds);
+    uint32_t delayTime = 0;
     if (microsecondsTillNextMinute <= minimumDelay)
     {
-        delay += millisecondsInMinute;
+        delayTime = microsecondsInMinute + microsecondsTillNextMinute - bootEstimationMicroseconds;
     }
-    return static_cast<uint32_t>(delay);
+    else
+    {
+        delayTime = microsecondsTillNextMinute - bootEstimationMicroseconds;
+    }
+    return static_cast<uint32_t>(delayTime/1000);
 }
 
 void DustMonitorController::processSPS30Measurement()
