@@ -4,14 +4,26 @@
 #include "TimeFunctions.h"
 
 #include "PersistentStorage.h"
+#include "Delays.h"
 
 #include <esp_now.h>
-#include <WiFi.h>
+#include <esp_wifi.h>
 
 #include "Debug.h"
 
 namespace
 {
+
+void initWiFi()
+{
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK( esp_wifi_init(&cfg) );
+    ESP_ERROR_CHECK( esp_wifi_set_storage(WIFI_STORAGE_RAM) );
+    ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
+    ESP_ERROR_CHECK( esp_wifi_start());
+}
 
 struct MeasurementDataMessage
 {
@@ -59,7 +71,7 @@ void onDataReceive(const uint8_t* /*mac_addr*/, const uint8_t* data, int data_le
 {
     if (data_len == sizeof(CorrectionMessage))
     {
-        responseMicroseconds = micros();
+        responseMicroseconds = embedded::getMillisecondTicks();
         memcpy(&correctionMessage, data, data_len);
         const auto remoteReceivedTime = correctionMessage.receiveTime;
         const auto remoteSentTime = correctionMessage.currentTime;
@@ -91,11 +103,11 @@ bool EspNowTransport::prepareEspNow() const
     {
         return true;
     }
-    WiFiClass::mode(WIFI_STA);
+    initWiFi();
 
     if (esp_now_init() != ESP_OK)
     {
-        Serial.println("Error initializing ESP-NOW");
+        DEBUG_LOG("Error initializing ESP-NOW");
         return false;
     }
 
@@ -134,7 +146,7 @@ void EspNowTransport::updateView(const EspNowTransport::Data &transportData)
 
     if (prepareEspNow())
     {
-        lastPacketMicroseconds = micros();
+        lastPacketMicroseconds = embedded::getMicrosecondTicks();
         measurementDataMessage.timestamp = microsecondsNow();
         lastPacketTimestamp = measurementDataMessage.timestamp;
         auto result = esp_now_send(AppConfig::macAddress.begin(), (uint8_t*)&measurementDataMessage,

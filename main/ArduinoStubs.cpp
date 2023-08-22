@@ -9,31 +9,27 @@
 #include "esp32-arduino/PacketUartImpl.h"
 #include "esp32-arduino/I2CBus.h"
 
-#include <Arduino.h>
-#include <Wire.h>
+#include <esp_system.h>
+#include <nvs_flash.h>
 
 #include "Debug.h"
 
 namespace
 {
-// for STM32 platform or pure esp-idf UartDevice is a nontrivial class,
-// but for Arduino-based platforms Hardware Serial provides enough functionality.
-// We can't just make name aliasing to allow forward declaration, so
-// we have to use trivial inheritance.
-static_assert(sizeof(embedded::PacketUart::UartDevice) == sizeof(HardwareSerial));
-static_assert(std::is_base_of_v<HardwareSerial, embedded::PacketUart::UartDevice>);
-
 struct DriversHolder
 {
-    DriversHolder(embedded::PersistentStorage& storage, TwoWire& wire, HardwareSerial& serial, int8_t address)
-        : i2CBus(wire)
+    DriversHolder(embedded::PersistentStorage& storage, int i2CBusNum, int serialPortNum, int8_t address)
+        : i2CBus(i2CBusNum)
         , i2CDevice(i2CBus, address)
-        , uart2(static_cast<embedded::PacketUart::UartDevice&>(serial))
+        , uart2Device(serialPortNum)
+        , uart2(uart2Device)
         , controller(storage, uart2, i2CDevice)
     {
+        i2CBus.init(AppConfig::SDA, AppConfig::SCL, 100000);
     }
     embedded::I2CBus i2CBus;
     embedded::I2CHelper i2CDevice;
+    embedded::PacketUart::UartDevice uart2Device;
     embedded::PacketUart uart2;
     DustMonitorController controller;
 };
@@ -47,15 +43,14 @@ bool wakeUp = false;
 
 void setup()
 {
-    persistentStorage.emplace(persistentArray,esp_reset_reason() != ESP_RST_DEEPSLEEP);
-    wakeUp = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
+    wakeUp = esp_reset_reason() == ESP_RST_DEEPSLEEP;
+    persistentStorage.emplace(persistentArray, !wakeUp);
 #ifdef DEBUG_SERIAL_OUT
-    Serial.begin(115200, SERIAL_8N1, AppConfig::serial1RxPin, AppConfig::serial1TxPin);
+    embedded::PacketUart::UartDevice::init(0, AppConfig::serial1RxPin, AppConfig::serial1TxPin, 115200);
 #endif
     DEBUG_LOG((wakeUp ? "Wake up after sleep" : "Initial startup"))
-    Serial2.begin(115200, SERIAL_8N1, AppConfig::serial2RxPin, AppConfig::serial2TxPin);
-    Wire.begin(AppConfig::SDA, AppConfig::SCL);
-    driversHolder.emplace(*persistentStorage, Wire, Serial2, AppConfig::bme280Address);
+    embedded::PacketUart::UartDevice::init(2, AppConfig::serial2RxPin, AppConfig::serial2TxPin, 115200);
+    driversHolder.emplace(*persistentStorage, 0, 2, AppConfig::bme280Address);
     if (!driversHolder->controller.setup(wakeUp)) {
         DEBUG_LOG("Setup failed!");
     }
@@ -68,8 +63,22 @@ void loop()
     {
         driversHolder->controller.hibernate();
         DEBUG_LOG("Going to deep sleep for " << delayTime << " ms")
-        esp_sleep_enable_timer_wakeup(delayTime * 1000ll);
-        esp_deep_sleep_start();
+        embedded::deepSleep(delayTime);
     }
     embedded::delay(delayTime);
+}
+
+extern "C" void app_main()
+{
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK( nvs_flash_erase() );
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK( ret );
+    setup();
+    while (true)
+    {
+        loop();
+    }
 }
