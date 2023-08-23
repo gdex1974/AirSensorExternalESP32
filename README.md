@@ -17,7 +17,6 @@ This unit is based on Lolin32-lite board, with the firmware based on ESP-IDF fra
 ## Software
 
 - [esp-idf](https://github.com/espressif/esp-idf/releases/tag/v4.4.5) main framework
-- [arduino-esp32](https://github.com/espressif/arduino-esp32/releases/tag/2.0.11) arduino framework for esp32
 
 Currently, ESP-IDF 4.4.5 build system overrides C/C++ standard using `-std=gnu99` and `-std=gnu++11` flags.
 It happens into estp-idf/tools/cmake/build.cmake file. To avoid this, the following lines should be commented out:
@@ -58,7 +57,6 @@ Connection schema:
 The firmware is based on ESP-IDF framework (tested version is 4.4.5) and is written in C++ language. The main task is to read the data from sensors and send them to the internal unit via Esp-Now protocol. The firmware is divided into several modules:
 
 - components - contains the code of the external unit
-  - arduino - here the arduino framework is placed. The tested version is 2.0.11
   - general-support library - contains the code for general support functions, obtained from this repository.
   - SimpleDrivers - contains the code for the SPS30 and BME280 drivers, obtained from this repository.
 - main - contains the main code of the external unit's firmware
