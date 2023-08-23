@@ -6,8 +6,8 @@
 #include "PacketUart.h"
 #include "PersistentStorage.h"
 
-#include "esp32-arduino/PacketUartImpl.h"
-#include "esp32-arduino/I2CBus.h"
+#include "esp32-esp-idf/PacketUartImpl.h"
+#include "esp32-esp-idf/I2CBus.h"
 
 #include <esp_system.h>
 #include <nvs_flash.h>

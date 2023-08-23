@@ -53,7 +53,7 @@ MeasurementDataMessage measurementDataMessage;
 
 union
 {
-CorrectionMessage correctionMessage;
+    CorrectionMessage correctionMessage;
     std::array<uint8_t, sizeof(CorrectionMessage)> bytes;
 } correctionData;
 
