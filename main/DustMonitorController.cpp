@@ -3,11 +3,11 @@
 #include "TimeFunctions.h"
 #include "AppConfig.h"
 
-#include <Delays.h>
 #include <PacketUart.h>
 #include <PersistentStorage.h>
 #include "AnalogPin.h"
-#include "esp32-arduino/GpioPinDefinition.h"
+
+#include "esp32-esp-idf/GpioPinDefinition.h"
 
 #include <driver/rtc_io.h>
 
@@ -154,7 +154,7 @@ uint32_t DustMonitorController::process()
     }
 
     auto nowMicroseconds = microsecondsNow();
-    const int64_t wholeMinutePast = (nowMicroseconds/microsecondsInMinute)*microsecondsInMinute;
+    const int64_t wholeMinutePast = (nowMicroseconds / microsecondsInMinute) * microsecondsInMinute;
     const auto microsecondsTillNextMinute = wholeMinutePast + microsecondsInMinute - nowMicroseconds;
     const auto minimumDelay = (controllerData.sps30Status != SPS30Status::Measuring) ?
             microsecondsInSecond : 30 * microsecondsInSecond;
