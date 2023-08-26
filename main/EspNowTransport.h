@@ -22,6 +22,7 @@ public:
     void updateView(const Data& data);
     SendStatus getStatus() const;
     int64_t getCorrection() const;
+    int64_t getReceivedTimestamp() const;
 
 private:
 

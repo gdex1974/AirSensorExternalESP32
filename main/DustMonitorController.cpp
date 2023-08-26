@@ -5,16 +5,18 @@
 
 #include <PacketUart.h>
 #include <PersistentStorage.h>
-#include <Debug.h>
-#include <Arduino.h>
+#include "AnalogPin.h"
+
+#include "esp32-esp-idf/GpioPinDefinition.h"
+
 #include <driver/rtc_io.h>
-#include <esp32-hal-gpio.h>
+
+#include <Debug.h>
 
 namespace
 {
-
 constexpr int millisecondsInMinute = 60000;
-constexpr int bootEstimationMilliseconds = 500;
+constexpr int bootEstimationMicroseconds = 700000;
 
 constexpr float rawToVolts = 3.3f/4095;
 constexpr std::string_view controllerDataTag = "DMC";
@@ -30,7 +32,7 @@ void initStepUpControl()
 void switchStepUpConversion(bool enable)
 {
     const auto stepUpPin = (gpio_num_t)AppConfig::stepUpPin;
-    rtc_gpio_set_level(stepUpPin, enable ? HIGH : LOW);
+    rtc_gpio_set_level(stepUpPin, enable? 1 : 0);
 }
 
 void holdStepUpConversion()
@@ -44,6 +46,20 @@ bool isTimeSyncronized()
     return time(nullptr) > 1692025000;
 }
 
+tm getLocalTime(time_t time)
+{
+    tm info {};
+    localtime_r(&time, &info);
+    return info;
+}
+
+int readVoltageRaw()
+{
+    embedded::GpioPinDefinition voltagePin { AppConfig::voltagePin };
+    const auto voltage = embedded::AnalogPin(voltagePin).singleRead();
+    DEBUG_LOG("VoltageRaw is " << voltage);
+    return voltage;
+}
 } // namespace
 
 bool DustMonitorController::setup(bool wakeUp)
@@ -125,8 +141,7 @@ uint32_t DustMonitorController::process()
                     .tv_sec = nowSeconds,
                     .tv_usec = static_cast<decltype(timeval::tv_usec)>(nowMicroseconds - nowSeconds * microsecondsInSecond)
                 };
-                timezone utcTimezone {0, 0};
-                settimeofday(&correctedTimeval, &utcTimezone);
+                settimeofday(&correctedTimeval, nullptr);
                 DEBUG_LOG("Time is corrected by " << correction << " us")
             }
             else
@@ -139,17 +154,20 @@ uint32_t DustMonitorController::process()
     }
 
     auto nowMicroseconds = microsecondsNow();
-    const int64_t wholeMinutePast = (nowMicroseconds/microsecondsInMinute)*microsecondsInMinute;
-    const int64_t nextWholeMinute = wholeMinutePast + microsecondsInMinute;
-    const auto microsecondsTillNextMinute = nextWholeMinute - nowMicroseconds;
+    const int64_t wholeMinutePast = (nowMicroseconds / microsecondsInMinute) * microsecondsInMinute;
+    const auto microsecondsTillNextMinute = wholeMinutePast + microsecondsInMinute - nowMicroseconds;
     const auto minimumDelay = (controllerData.sps30Status != SPS30Status::Measuring) ?
             microsecondsInSecond : 30 * microsecondsInSecond;
-    auto delay = (microsecondsTillNextMinute / 1000 - bootEstimationMilliseconds);
+    uint32_t delayTime = 0;
     if (microsecondsTillNextMinute <= minimumDelay)
     {
-        delay += millisecondsInMinute;
+        delayTime = microsecondsInMinute + microsecondsTillNextMinute - bootEstimationMicroseconds;
     }
-    return static_cast<uint32_t>(delay);
+    else
+    {
+        delayTime = microsecondsTillNextMinute - bootEstimationMicroseconds;
+    }
+    return static_cast<uint32_t>(delayTime/1000);
 }
 
 void DustMonitorController::processSPS30Measurement()
@@ -157,11 +175,7 @@ void DustMonitorController::processSPS30Measurement()
     bool shallStartMeasurement = (controllerData.wakeupCounter++) % 60 == 0;
     if (isTimeSyncronized() && controllerData.sps30Status != SPS30Status::Measuring)
     {
-        tm time {};
-        if (getLocalTime(&time, 0))
-        {
-            shallStartMeasurement = time.tm_min == 59;
-        }
+        shallStartMeasurement = getLocalTime(time(nullptr)).tm_min == 59;
     }
     if (shallStartMeasurement)
     {
@@ -176,7 +190,7 @@ void DustMonitorController::processSPS30Measurement()
             controllerData.sps30Status = SPS30Status::Measuring;
             holdStepUpConversion();
         }
-        controllerData.voltageRaw = analogRead(AppConfig::voltagePin);
+        controllerData.voltageRaw = readVoltageRaw();
     }
     else if (controllerData.sps30Status == SPS30Status::Measuring)
     {
@@ -190,7 +204,7 @@ void DustMonitorController::processSPS30Measurement()
         dustData.stopMeasure();
         dustData.sleep();
         controllerData.sps30Status = SPS30Status::Sleep;
-        controllerData.voltageRaw = analogRead(AppConfig::voltagePin);
+        controllerData.voltageRaw = readVoltageRaw();
         switchStepUpConversion(false);
     }
 }
