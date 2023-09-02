@@ -121,7 +121,7 @@ uint32_t DustMonitorController::process()
             {
                 DEBUG_LOG("Too manu attempts, resetting")
                 attemptsCounter = 0;
-                return millisecondsInMinute;
+                break;
             }
             else{
                 DEBUG_LOG("Failed to send data, retry " << attemptsCounter)

@@ -8,6 +8,7 @@
 
 #include "esp32-esp-idf/PacketUartImpl.h"
 #include "esp32-esp-idf/I2CBus.h"
+#include "esp32-esp-idf/SleepFunctions.h"
 
 #include <esp_system.h>
 #include <nvs_flash.h>
