@@ -8,6 +8,7 @@
 #include "AnalogPin.h"
 
 #include "esp32-esp-idf/GpioPinDefinition.h"
+#include "Delays.h"
 
 #include <driver/rtc_io.h>
 
@@ -15,8 +16,8 @@
 
 namespace
 {
-constexpr int millisecondsInMinute = 60000;
 constexpr int bootEstimationMicroseconds = 700000;
+constexpr int sps30MeasurementDuration = 30; //seconds
 
 constexpr float rawToVolts = 3.3f/4095;
 constexpr std::string_view controllerDataTag = "DMC";
@@ -33,6 +34,10 @@ void switchStepUpConversion(bool enable)
 {
     const auto stepUpPin = (gpio_num_t)AppConfig::stepUpPin;
     rtc_gpio_set_level(stepUpPin, enable? 1 : 0);
+    if (enable)
+    {
+        embedded::delay(20);
+    }
 }
 
 void holdStepUpConversion()
@@ -41,9 +46,9 @@ void holdStepUpConversion()
     rtc_gpio_hold_en(stepUpPin);
 }
 
-bool isTimeSyncronized()
+bool isTimeSyncronized(time_t time)
 {
-    return time(nullptr) > 1692025000;
+    return time > 1692025000;
 }
 
 tm getLocalTime(time_t time)
@@ -57,8 +62,28 @@ int readVoltageRaw()
 {
     embedded::GpioPinDefinition voltagePin { AppConfig::voltagePin };
     const auto voltage = embedded::AnalogPin(voltagePin).singleRead();
-    DEBUG_LOG("VoltageRaw is " << voltage);
+    DEBUG_LOG("VoltageRaw is " << voltage)
     return voltage;
+}
+
+void correctTime(const int64_t correction)
+{
+    if (std::abs(correction) > 10000)
+    {
+        auto nowMicroseconds = microsecondsNow();
+        nowMicroseconds += correction;
+        const auto nowSeconds = static_cast<decltype(timeval::tv_sec)>(nowMicroseconds / microsecondsInSecond);
+        timeval correctedTimeval {
+                .tv_sec = nowSeconds,
+                .tv_usec = static_cast<decltype(timeval::tv_usec)>(nowMicroseconds - nowSeconds * microsecondsInSecond)
+        };
+        settimeofday(&correctedTimeval, nullptr);
+        DEBUG_LOG("Time is corrected by " << correction << " us")
+    }
+    else
+    {
+        DEBUG_LOG("Small correction factor " << correction << " us is skipped")
+    }
 }
 } // namespace
 
@@ -76,40 +101,43 @@ bool DustMonitorController::setup(bool wakeUp)
             controllerData = *data;
         }
     }
-    auto pmResult = dustData.setup(wakeUp);
+    sensorPresent = dustData.setup(wakeUp);
     if (!wakeUp)
     {
-        if (pmResult)
+        controllerData.voltageRaw = readVoltageRaw();
+        if (sensorPresent)
         {
             const auto serial = dustData.getSpsSerial();
             memcpy(controllerData.sps30Serial, serial.begin(), serial.size());
+            dustData.sleep();
+            switchStepUpConversion(false);
         }
     }
     auto meteoResul = meteoData.setup(wakeUp);
     auto viewResult = transport.setup(controllerData.sps30Serial, wakeUp);
-    return (meteoResul | pmResult)  && viewResult ;
+    return (meteoResul | sensorPresent)  && viewResult ;
 }
 
 uint32_t DustMonitorController::process()
 {
-    if (!isMeasured)
+    const auto currentTime = time(nullptr);
+    const bool isTimeGood = isTimeSyncronized(currentTime);
+    if (isTimeGood && sensorPresent)
     {
-        DEBUG_LOG("Measuring")
-        if (meteoData.activate() && meteoData.doMeasure())
-        {
-            meteoData.hibernate();
-        }
+        processSPS30Measurement();
+    }
 
-        if (controllerData.sps30Serial[0] != 0)
-        {
-            processSPS30Measurement();
-        }
-        isMeasured = true;
-        needSend = true;
+    if (transport.getStatus() == EspNowTransport::SendStatus::Idle) // no send attempts after boot
+    {
+        needSend = !isTimeGood || getLocalTime(currentTime).tm_sec == 59;
     }
     if (needSend)
     {
         needSend = false;
+        if (meteoData.activate() && meteoData.doMeasure())
+        {
+            meteoData.hibernate();
+        }
         transport.updateView({meteoData.getHumidity(), meteoData.getTemperature(), meteoData.getPressure(),
                              controllerData.pm01, controllerData.pm25, controllerData.pm10,
                              float(controllerData.voltageRaw) * rawToVolts / AppConfig::batteryVoltageDivider});
@@ -132,22 +160,7 @@ uint32_t DustMonitorController::process()
         case EspNowTransport::SendStatus::Awaiting:
             return 1;
         case EspNowTransport::SendStatus::Completed:
-            if (const auto correction = transport.getCorrection(); std::abs(correction) > 10000)
-            {
-                auto nowMicroseconds = microsecondsNow();
-                nowMicroseconds += correction;
-                const auto nowSeconds = static_cast<decltype(timeval::tv_sec)>(nowMicroseconds / microsecondsInSecond);
-                timeval correctedTimeval {
-                    .tv_sec = nowSeconds,
-                    .tv_usec = static_cast<decltype(timeval::tv_usec)>(nowMicroseconds - nowSeconds * microsecondsInSecond)
-                };
-                settimeofday(&correctedTimeval, nullptr);
-                DEBUG_LOG("Time is corrected by " << correction << " us")
-            }
-            else
-            {
-                DEBUG_LOG("Small correction factor " << correction << " us is skipped")
-            }
+            correctTime(transport.getCorrection());
             break;
         default:
             break;
@@ -156,10 +169,8 @@ uint32_t DustMonitorController::process()
     auto nowMicroseconds = microsecondsNow();
     const int64_t wholeMinutePast = (nowMicroseconds / microsecondsInMinute) * microsecondsInMinute;
     const auto microsecondsTillNextMinute = wholeMinutePast + microsecondsInMinute - nowMicroseconds;
-    const auto minimumDelay = (controllerData.sps30Status != SPS30Status::Measuring) ?
-            microsecondsInSecond : 30 * microsecondsInSecond;
-    uint32_t delayTime = 0;
-    if (microsecondsTillNextMinute <= minimumDelay)
+    uint32_t delayTime;
+    if (microsecondsTillNextMinute <= bootEstimationMicroseconds)
     {
         delayTime = microsecondsInMinute + microsecondsTillNextMinute - bootEstimationMicroseconds;
     }
@@ -167,32 +178,17 @@ uint32_t DustMonitorController::process()
     {
         delayTime = microsecondsTillNextMinute - bootEstimationMicroseconds;
     }
+    if (controllerData.sps30Status == SPS30Status::Measuring)
+    {
+        delayTime = std::min(delayTime, uint32_t(sps30MeasurementDuration * microsecondsInSecond));
+    }
     return static_cast<uint32_t>(delayTime/1000);
 }
 
 void DustMonitorController::processSPS30Measurement()
 {
-    bool shallStartMeasurement = (controllerData.wakeupCounter++) % 60 == 0;
-    if (isTimeSyncronized() && controllerData.sps30Status != SPS30Status::Measuring)
-    {
-        shallStartMeasurement = getLocalTime(time(nullptr)).tm_min == 59;
-    }
-    if (shallStartMeasurement)
-    {
-        switchStepUpConversion(true);
-        if (controllerData.sps30Status != SPS30Status::Measuring)
-        {
-            if (controllerData.sps30Status == SPS30Status::Sleep)
-            {
-                dustData.wakeUp();
-            }
-            dustData.startMeasure();
-            controllerData.sps30Status = SPS30Status::Measuring;
-            holdStepUpConversion();
-        }
-        controllerData.voltageRaw = readVoltageRaw();
-    }
-    else if (controllerData.sps30Status == SPS30Status::Measuring)
+    if (controllerData.sps30Status == SPS30Status::Measuring
+        && time(nullptr) > controllerData.lastPMMeasureStarted + sps30MeasurementDuration)
     {
         uint16_t p1, p25, p10;
         if (dustData.getMeasureData(p1, p25, p10))
@@ -201,11 +197,36 @@ void DustMonitorController::processSPS30Measurement()
             controllerData.pm25 = p25;
             controllerData.pm10 = p10;
         }
+        else
+        {
+            DEBUG_LOG("Failed to obtain PMx data")
+            controllerData.pm01 = -1;
+            controllerData.pm10 = -1;
+            controllerData.pm25 = -1;
+        }
         dustData.stopMeasure();
         dustData.sleep();
         controllerData.sps30Status = SPS30Status::Sleep;
         controllerData.voltageRaw = readVoltageRaw();
         switchStepUpConversion(false);
+        DEBUG_LOG("PM Measurement finished")
+    }
+    else
+    {
+        const auto currentTime = time(nullptr);
+        const bool shallStartMeasurement = (controllerData.lastPMMeasureStarted == 0) ||
+                (currentTime - controllerData.lastPMMeasureStarted > 10*60
+                    && getLocalTime(currentTime).tm_min == 59);
+        if (shallStartMeasurement)
+        {
+            DEBUG_LOG("Starting PM measurement")
+            switchStepUpConversion(true);
+            dustData.startMeasure();
+            controllerData.sps30Status = SPS30Status::Measuring;
+            holdStepUpConversion();
+            controllerData.voltageRaw = readVoltageRaw();
+            controllerData.lastPMMeasureStarted = time(nullptr);
+        }
     }
 }
 

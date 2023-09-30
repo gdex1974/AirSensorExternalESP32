@@ -17,9 +17,10 @@
 
 namespace
 {
-struct DriversHolder
+class ControllerHolder
 {
-    DriversHolder(embedded::PersistentStorage& storage, int i2CBusNum, int serialPortNum, int8_t address)
+public:
+    ControllerHolder(embedded::PersistentStorage& storage, int i2CBusNum, int serialPortNum, int8_t address)
         : i2CBus(i2CBusNum)
         , i2CDevice(i2CBus, address)
         , uart2Device(serialPortNum)
@@ -28,6 +29,8 @@ struct DriversHolder
     {
         i2CBus.init(AppConfig::SDA, AppConfig::SCL, 100000);
     }
+    DustMonitorController& getController() { return controller; }
+private:
     embedded::I2CBus i2CBus;
     embedded::I2CHelper i2CDevice;
     embedded::PacketUart::UartDevice uart2Device;
@@ -37,7 +40,7 @@ struct DriversHolder
 
 RTC_DATA_ATTR std::array<uint8_t, 2048> persistentArray;
 std::optional<embedded::PersistentStorage> persistentStorage;
-std::optional<DriversHolder> driversHolder;
+std::optional<ControllerHolder> driversHolder;
 
 bool wakeUp = false;
 }
@@ -52,17 +55,17 @@ void setup()
     DEBUG_LOG((wakeUp ? "Wake up after sleep" : "Initial startup"))
     embedded::PacketUart::UartDevice::init(2, AppConfig::serial2RxPin, AppConfig::serial2TxPin, 115200);
     driversHolder.emplace(*persistentStorage, 0, 2, AppConfig::bme280Address);
-    if (!driversHolder->controller.setup(wakeUp)) {
+    if (!driversHolder->getController().setup(wakeUp)) {
         DEBUG_LOG("Setup failed!");
     }
 }
 
 void loop()
 {
-    auto delayTime = driversHolder->controller.process();
-    if (delayTime > 700)
+    auto delayTime = driversHolder->getController().process();
+    if (delayTime > 1000)
     {
-        driversHolder->controller.hibernate();
+        driversHolder->getController().hibernate();
         DEBUG_LOG("Going to deep sleep for " << delayTime << " ms")
         embedded::deepSleep(delayTime);
     }
