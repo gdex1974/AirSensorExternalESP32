@@ -22,10 +22,19 @@ public:
         return data.sensorPresent && sps30.stopMeasurement() == embedded::Sps30Error::Success;
     }
 
-    bool wakeUp();
+    bool wakeUp()
+    {
+        return data.firmwareMajorVersion > 1 && sps30.wakeUp() == embedded::Sps30Error::Success;
+    }
+
     bool sleep()
     {
         return data.firmwareMajorVersion > 1 && sps30.sleep() == embedded::Sps30Error::Success;
+    }
+
+    bool activate()
+    {
+        return sps30.activateTransport() == embedded::Sps30Error::Success;
     }
 
     bool hibernate();

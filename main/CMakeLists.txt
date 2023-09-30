@@ -6,7 +6,7 @@ endif()
 idf_component_register(
         SRCS
         "AppConfig.cpp"
-        "ArduinoStubs.cpp"
+        "AppMain.cpp"
         "DustMonitorController.cpp"
         "EspNowTransport.cpp"
         "PTHProvider.cpp"
