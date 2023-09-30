@@ -18,14 +18,13 @@ public:
     enum class SendStatus {Idle, Requested, Failed, Awaiting, Completed};
 
     EspNowTransport() = default;
-    bool setup(embedded::CharView sps30Serial, bool wakeUp);
+    bool setup(embedded::CharView serial, bool wakeUp);
     void updateView(const Data& data);
     SendStatus getStatus() const;
     int64_t getCorrection() const;
-    int64_t getReceivedTimestamp() const;
 
 private:
-
     bool prepareEspNow() const;
     mutable bool espNowPrepared = false;
+    embedded::CharView sps30Serial;
 };
