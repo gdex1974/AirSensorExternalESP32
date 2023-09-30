@@ -33,12 +33,12 @@ private:
     struct ControllerData
     {
         SPS30Status sps30Status = SPS30Status::Startup;
-        int pm01{};
-        int pm25{};
-        int pm10{};
+        int pm01 = -1;
+        int pm25 = -1;
+        int pm10 = -1;
         uint16_t voltageRaw = 0;
         char sps30Serial[32] = {};
-        uint32_t wakeupCounter = 0;
+        time_t lastPMMeasureStarted = 0;
     } controllerData;
     embedded::PersistentStorage& storage;
     PTHProvider meteoData;
@@ -47,4 +47,5 @@ private:
     int attemptsCounter = 0;
     bool isMeasured = false;
     bool needSend = false;
+    bool sensorPresent = false;
 };

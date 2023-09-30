@@ -75,11 +75,6 @@ bool SPS30DataProvider::startMeasure()
     return result;
 }
 
-bool SPS30DataProvider::wakeUp()
-{
-    return data.firmwareMajorVersion > 1 && sps30.wakeUp() == Sps30Error::Success;
-}
-
 bool SPS30DataProvider::hibernate()
 {
     storage.set(sps30DataKey, data);

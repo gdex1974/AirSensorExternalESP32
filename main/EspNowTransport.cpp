@@ -25,31 +25,11 @@ void initWiFi()
     ESP_ERROR_CHECK( esp_wifi_start());
 }
 
-struct MeasurementDataMessage
-{
-    char spsSerial[32]{};
-    uint16_t pm01{};
-    uint16_t pm25{};
-    uint16_t pm10{};
-    float humidity{};
-    float temperature{};
-    float pressure{};
-    float voltage{};
-    int64_t timestamp{};
-};
-
 struct CorrectionMessage
 {
     int64_t currentTime;
     int64_t receiveTime;
 };
-
-inline int64_t microsecondsFromTimeval(const timeval &tv)
-{
-    return ((int64_t)tv.tv_sec) * 1000000LL + tv.tv_usec;
-}
-
-MeasurementDataMessage measurementDataMessage;
 
 union
 {
@@ -81,7 +61,7 @@ void onDataReceive(const uint8_t* /*mac_addr*/, const uint8_t* data, int data_le
         const auto &remoteReceivedTime = correctionData.correctionMessage.receiveTime;
         const auto &remoteSentTime = correctionData.correctionMessage.currentTime;
         const auto remoteDelta = remoteSentTime - remoteReceivedTime;
-        const auto localDelta = responseMicroseconds - lastPacketMicroseconds;
+        const auto localDelta = static_cast<int64_t>(responseMicroseconds - lastPacketMicroseconds);
 
         const auto correctionFactor = (localDelta - remoteDelta) / 2;
         rtcCorrection = remoteReceivedTime - lastPacketTimestamp - correctionFactor;
@@ -94,10 +74,9 @@ void onDataReceive(const uint8_t* /*mac_addr*/, const uint8_t* data, int data_le
 }
 }
 
-bool EspNowTransport::setup(embedded::CharView sps30Serial, bool /*wakeUp*/)
+bool EspNowTransport::setup(embedded::CharView serial, bool /*wakeUp*/)
 {
-    memcpy(measurementDataMessage.spsSerial, sps30Serial.begin(),
-           std::min(sizeof(measurementDataMessage.spsSerial), (std::size_t)sps30Serial.size()));
+    sps30Serial = serial;
     return true;
 
 }
@@ -141,30 +120,51 @@ bool EspNowTransport::prepareEspNow() const
 
 void EspNowTransport::updateView(const EspNowTransport::Data &transportData)
 {
-    measurementDataMessage.pm01 = transportData.pm01;
-    measurementDataMessage.pm25 = transportData.pm25;
-    measurementDataMessage.pm10 = transportData.pm10;
-    measurementDataMessage.pressure = transportData.pressure;
-    measurementDataMessage.humidity = transportData.humidity;
-    measurementDataMessage.temperature = transportData.temperature;
-    measurementDataMessage.voltage = transportData.batteryVoltage;
+    union
+    {
+        struct
+        {
+            char spsSerial[32];
+            int16_t pm01;
+            int16_t pm25;
+            int16_t pm10;
+            float humidity;
+            float temperature;
+            float pressure;
+            float voltage;
+            int64_t timestamp;
+        } message;
+        std::array<uint8_t, sizeof(message)> bytes;
+    } measurementDataMessage;
+
+    memcpy(measurementDataMessage.message.spsSerial, sps30Serial.begin(),
+           std::min(sizeof(measurementDataMessage.message.spsSerial), (std::size_t)sps30Serial.size()));
+    measurementDataMessage.message.pm01 = transportData.pm01;
+    measurementDataMessage.message.pm25 = transportData.pm25;
+    measurementDataMessage.message.pm10 = transportData.pm10;
+    measurementDataMessage.message.pressure = transportData.pressure;
+    measurementDataMessage.message.humidity = transportData.humidity;
+    measurementDataMessage.message.temperature = transportData.temperature;
+    measurementDataMessage.message.voltage = transportData.batteryVoltage;
 
     if (prepareEspNow())
     {
         lastPacketMicroseconds = embedded::getMicrosecondTicks();
-        measurementDataMessage.timestamp = microsecondsNow();
-        lastPacketTimestamp = measurementDataMessage.timestamp;
-        auto result = esp_now_send(AppConfig::macAddress.begin(), (uint8_t*)&measurementDataMessage,
-                                   sizeof(measurementDataMessage));
+        measurementDataMessage.message.timestamp = microsecondsNow();
+        lastPacketTimestamp = measurementDataMessage.message.timestamp;
+        auto result = esp_now_send(AppConfig::macAddress.begin(), measurementDataMessage.bytes.begin(),
+                                   measurementDataMessage.bytes.size());
         if (result == ESP_OK)
         {
             sendStatus = SendStatus::Requested;
+            return;
         }
         else
         {
             DEBUG_LOG("Error sending the data");
         }
     }
+    sendStatus = SendStatus::Failed;
 }
 
 int64_t EspNowTransport::getCorrection() const
