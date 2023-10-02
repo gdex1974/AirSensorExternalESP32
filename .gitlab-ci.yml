@@ -11,6 +11,8 @@ stages:
 
 build:
   stage: build
+  tags:
+    - docker
   image: espressif/idf:v4.4.6
   script:
     - idf.py build
