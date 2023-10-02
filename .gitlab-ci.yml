@@ -6,10 +6,20 @@
 # Note that environment variables can be set in several places
 # See https://docs.gitlab.com/ee/ci/variables/#cicd-variable-precedence
 stages:
-- test
+- check-sast
+- build
+
+build:
+  stage: build
+  image: espressif/idf:v4.4.6
+  script:
+    - idf.py build
+  artifacts:
+    paths:
+      - build/ExternalAirQualitySensor.bin
 
 sast:
-  stage: test
+  stage: check-sast
   tags:
     - sast-runner
 
