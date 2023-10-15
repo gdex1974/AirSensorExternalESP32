@@ -9,13 +9,19 @@
 
 class DustMonitorController {
 public:
+    enum class ResetReason
+    {
+        PowerOn,
+        DeepSleep,
+        BrownOut,
+    };
     DustMonitorController(embedded::PersistentStorage& storage, embedded::PacketUart& uart, embedded::I2CHelper& i2CHelper)
     : storage(storage)
     , meteoData(storage, i2CHelper)
     , dustData(storage, uart)
     {}
 
-    bool setup(bool wakeUp);
+    bool setup(ResetReason resetReason);
     uint32_t process();
     bool hibernate();
 
@@ -39,6 +45,7 @@ private:
         uint16_t voltageRaw = 0;
         char sps30Serial[32] = {};
         time_t lastPMMeasureStarted = 0;
+        bool insufficientPower = false;
     } controllerData;
     embedded::PersistentStorage& storage;
     PTHProvider meteoData;
