@@ -87,11 +87,13 @@ void correctTime(const int64_t correction)
 }
 } // namespace
 
-bool DustMonitorController::setup(bool wakeUp)
+bool DustMonitorController::setup(ResetReason resetReason)
 {
     initStepUpControl();
+    bool wakeUp = resetReason == ResetReason::DeepSleep;
     if (!wakeUp)
     {
+        controllerData.insufficientPower = resetReason == ResetReason::BrownOut;
         switchStepUpConversion(true);
     }
     else
@@ -122,9 +124,13 @@ uint32_t DustMonitorController::process()
 {
     const auto currentTime = time(nullptr);
     const bool isTimeGood = isTimeSyncronized(currentTime);
-    if (isTimeGood && sensorPresent)
+    if (isTimeGood && sensorPresent && !controllerData.insufficientPower)
     {
         processSPS30Measurement();
+    }
+    else
+    {
+        switchStepUpConversion(false);
     }
 
     if (transport.getStatus() == EspNowTransport::SendStatus::Idle) // no send attempts after boot
