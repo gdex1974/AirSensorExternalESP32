@@ -14,6 +14,7 @@ public:
         int pm25 {};
         int pm10 {};
         float batteryVoltage {};
+        uint32_t flags {};
     };
     enum class SendStatus {Idle, Requested, Failed, Awaiting, Completed};
 

@@ -18,6 +18,7 @@ namespace
 {
 constexpr int bootEstimationMicroseconds = 700000;
 constexpr int sps30MeasurementDuration = 30; //seconds
+constexpr int insufficientPowerThreshold = 50 * 60; //seconds
 
 constexpr float rawToVolts = 3.3f/4095;
 constexpr std::string_view controllerDataTag = "DMC";
@@ -85,6 +86,10 @@ void correctTime(const int64_t correction)
         DEBUG_LOG("Small correction factor " << correction << " us is skipped")
     }
 }
+
+enum class SensorFlags : uint32_t {
+    BatteryFailure = 1 << 0,
+};
 } // namespace
 
 bool DustMonitorController::setup(ResetReason resetReason)
@@ -93,7 +98,7 @@ bool DustMonitorController::setup(ResetReason resetReason)
     bool wakeUp = resetReason == ResetReason::DeepSleep;
     if (!wakeUp)
     {
-        controllerData.insufficientPower = resetReason == ResetReason::BrownOut;
+        controllerData.insufficientPower = (resetReason == ResetReason::BrownOut);
         switchStepUpConversion(true);
     }
     else
@@ -124,13 +129,27 @@ uint32_t DustMonitorController::process()
 {
     const auto currentTime = time(nullptr);
     const bool isTimeGood = isTimeSyncronized(currentTime);
-    if (isTimeGood && sensorPresent && !controllerData.insufficientPower)
+    if (isTimeGood)
     {
-        processSPS30Measurement();
-    }
-    else
-    {
-        switchStepUpConversion(false);
+        if (controllerData.firstSyncTime == 0)
+        {
+            controllerData.firstSyncTime = currentTime;
+        }
+        if (sensorPresent)
+        {
+            if (!controllerData.insufficientPower)
+            {
+                processSPS30Measurement();
+            }
+            else
+            {
+                switchStepUpConversion(false);
+                if (currentTime - controllerData.firstSyncTime > insufficientPowerThreshold)
+                {
+                    controllerData.insufficientPower = false;
+                }
+            }
+        }
     }
 
     if (transport.getStatus() == EspNowTransport::SendStatus::Idle) // no send attempts after boot
@@ -146,7 +165,8 @@ uint32_t DustMonitorController::process()
         }
         transport.updateView({meteoData.getHumidity(), meteoData.getTemperature(), meteoData.getPressure(),
                              controllerData.pm01, controllerData.pm25, controllerData.pm10,
-                             float(controllerData.voltageRaw) * rawToVolts / AppConfig::batteryVoltageDivider});
+                             float(controllerData.voltageRaw) * rawToVolts / AppConfig::batteryVoltageDivider,
+                                     (controllerData.insufficientPower ? (uint32_t)SensorFlags::BatteryFailure : 0)});
     }
     switch (transport.getStatus())
     {

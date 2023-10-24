@@ -45,6 +45,7 @@ private:
         uint16_t voltageRaw = 0;
         char sps30Serial[32] = {};
         time_t lastPMMeasureStarted = 0;
+        time_t firstSyncTime = 0;
         bool insufficientPower = false;
     } controllerData;
     embedded::PersistentStorage& storage;
