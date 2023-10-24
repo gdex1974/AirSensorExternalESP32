@@ -133,6 +133,7 @@ void EspNowTransport::updateView(const EspNowTransport::Data &transportData)
             float pressure;
             float voltage;
             int64_t timestamp;
+            uint32_t flags;
         } message;
         std::array<uint8_t, sizeof(message)> bytes;
     } measurementDataMessage;
@@ -146,6 +147,7 @@ void EspNowTransport::updateView(const EspNowTransport::Data &transportData)
     measurementDataMessage.message.humidity = transportData.humidity;
     measurementDataMessage.message.temperature = transportData.temperature;
     measurementDataMessage.message.voltage = transportData.batteryVoltage;
+    measurementDataMessage.message.flags = transportData.flags;
 
     if (prepareEspNow())
     {
