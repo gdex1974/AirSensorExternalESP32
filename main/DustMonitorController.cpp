@@ -173,17 +173,7 @@ uint32_t DustMonitorController::process()
     switch (transport.getStatus())
     {
         case EspNowTransport::SendStatus::Failed:
-            if (++attemptsCounter > 10)
-            {
-                DEBUG_LOG("Too manu attempts, resetting")
-                attemptsCounter = 0;
-                break;
-            }
-            else{
-                DEBUG_LOG("Failed to send data, retry " << attemptsCounter)
-                needSend = true;
-            }
-            return 100;
+            break;
         case EspNowTransport::SendStatus::Requested:
         case EspNowTransport::SendStatus::Awaiting:
             return 1;
@@ -263,5 +253,6 @@ void DustMonitorController::processSPS30Measurement()
 bool DustMonitorController::hibernate()
 {
     dustData.hibernate();
+    transport.hibernate();
     return storage.set(controllerDataTag, controllerData);
 }
