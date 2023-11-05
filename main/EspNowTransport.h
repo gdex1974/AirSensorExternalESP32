@@ -10,15 +10,15 @@ public:
         float humidity {};
         float temperature {};
         float pressure {};
-        int pm01 {};
-        int pm25 {};
-        int pm10 {};
+        int16_t pm01 {};
+        int16_t pm25 {};
+        int16_t pm10 {};
         float batteryVoltage {};
         uint32_t flags {};
     };
     enum class SendStatus {Idle, Requested, Failed, Awaiting, Completed};
 
-    EspNowTransport() = default;
+    EspNowTransport(bool restrictTxPower) : restrictTxPower(restrictTxPower) {}
     bool setup(embedded::CharView serial, bool wakeUp);
     void updateView(const Data& data);
     SendStatus getStatus() const;
@@ -27,5 +27,6 @@ public:
 private:
     bool prepareEspNow() const;
     mutable bool espNowPrepared = false;
+    bool restrictTxPower;
     embedded::CharView sps30Serial;
 };

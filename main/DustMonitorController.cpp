@@ -23,8 +23,9 @@ constexpr int insufficientPowerThreshold = 50 * 60; //seconds
 constexpr float rawToVolts = 3.3f/4095;
 constexpr std::string_view controllerDataTag = "DMC";
 
-void initStepUpControl()
+void initStepUpControl(bool set = false)
 {
+    (void)set;// this is not necessary for ESP32
     const auto stepUpPin = (gpio_num_t)AppConfig::stepUpPin;
     rtc_gpio_init(stepUpPin); //initialize the RTC GPIO port
     rtc_gpio_set_direction(stepUpPin, RTC_GPIO_MODE_OUTPUT_ONLY); //set the port to output only mode
@@ -94,10 +95,10 @@ enum class SensorFlags : uint32_t {
 
 bool DustMonitorController::setup(ResetReason resetReason)
 {
-    initStepUpControl();
     bool wakeUp = resetReason == ResetReason::DeepSleep;
     if (!wakeUp)
     {
+        initStepUpControl(false);
         controllerData.insufficientPower = (resetReason == ResetReason::BrownOut);
         switchStepUpConversion(true);
     }
@@ -107,6 +108,7 @@ bool DustMonitorController::setup(ResetReason resetReason)
         {
             controllerData = *data;
         }
+        initStepUpControl(wakeUp && SPS30Status::Measuring == controllerData.sps30Status);
     }
     sensorPresent = dustData.setup(wakeUp);
     if (!wakeUp)
@@ -213,29 +215,31 @@ uint32_t DustMonitorController::process()
 
 void DustMonitorController::processSPS30Measurement()
 {
-    if (controllerData.sps30Status == SPS30Status::Measuring
-        && time(nullptr) > controllerData.lastPMMeasureStarted + sps30MeasurementDuration)
+    if (controllerData.sps30Status == SPS30Status::Measuring)
     {
-        uint16_t p1, p25, p10;
-        if (dustData.getMeasureData(p1, p25, p10))
+        if (const auto timestamp = time(nullptr); timestamp >=
+                                                  controllerData.lastPMMeasureStarted + sps30MeasurementDuration)
         {
-            controllerData.pm01 = p1;
-            controllerData.pm25 = p25;
-            controllerData.pm10 = p10;
+            if (uint16_t p1, p25, p10; dustData.getMeasureData(p1, p25, p10))
+            {
+                controllerData.pm01 = p1;
+                controllerData.pm25 = p25;
+                controllerData.pm10 = p10;
+                dustData.stopMeasure();
+            }
+            else
+            {
+                DEBUG_LOG("Failed to obtain PMx data")
+                controllerData.pm01 = -1;
+                controllerData.pm10 = -1;
+                controllerData.pm25 = -1;
+            }
+            dustData.sleep();
+            controllerData.sps30Status = SPS30Status::Sleep;
+            controllerData.voltageRaw = readVoltageRaw();
+            switchStepUpConversion(false);
+            DEBUG_LOG("PM Measurement finished")
         }
-        else
-        {
-            DEBUG_LOG("Failed to obtain PMx data")
-            controllerData.pm01 = -1;
-            controllerData.pm10 = -1;
-            controllerData.pm25 = -1;
-        }
-        dustData.stopMeasure();
-        dustData.sleep();
-        controllerData.sps30Status = SPS30Status::Sleep;
-        controllerData.voltageRaw = readVoltageRaw();
-        switchStepUpConversion(false);
-        DEBUG_LOG("PM Measurement finished")
     }
     else
     {

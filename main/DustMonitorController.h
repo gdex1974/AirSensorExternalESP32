@@ -15,10 +15,11 @@ public:
         DeepSleep,
         BrownOut,
     };
-    DustMonitorController(embedded::PersistentStorage& storage, embedded::PacketUart& uart, embedded::I2CHelper& i2CHelper)
+    DustMonitorController(embedded::PersistentStorage& storage, embedded::PacketUart& uart, embedded::I2CHelper& i2CHelper, bool restrictTxPower)
     : storage(storage)
     , meteoData(storage, i2CHelper)
     , dustData(storage, uart)
+    , transport(restrictTxPower)
     {}
 
     bool setup(ResetReason resetReason);
@@ -39,9 +40,9 @@ private:
     struct ControllerData
     {
         SPS30Status sps30Status = SPS30Status::Startup;
-        int pm01 = -1;
-        int pm25 = -1;
-        int pm10 = -1;
+        int16_t pm01 = -1;
+        int16_t pm25 = -1;
+        int16_t pm10 = -1;
         uint16_t voltageRaw = 0;
         char sps30Serial[32] = {};
         time_t lastPMMeasureStarted = 0;
