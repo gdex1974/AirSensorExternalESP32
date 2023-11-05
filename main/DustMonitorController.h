@@ -53,7 +53,6 @@ private:
     PTHProvider meteoData;
     SPS30DataProvider dustData;
     EspNowTransport transport;
-    int attemptsCounter = 0;
     bool isMeasured = false;
     bool needSend = false;
     bool sensorPresent = false;

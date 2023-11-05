@@ -23,10 +23,18 @@ public:
     void updateView(const Data& data);
     SendStatus getStatus() const;
     int64_t getCorrection() const;
+    bool hibernate();
+    void threadFunction();
 
 private:
-    bool prepareEspNow() const;
+    bool prepareEspNow();
+    bool sendData();
+    Data data;
+    volatile SendStatus sendStatus = EspNowTransport::SendStatus::Idle;
     mutable bool espNowPrepared = false;
     bool restrictTxPower;
     embedded::CharView sps30Serial;
+    volatile int64_t rtcCorrection = 0;
+    int attemptsCounter = 0;
+    static constexpr int maxAttempts = 10;
 };
