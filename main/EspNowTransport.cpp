@@ -88,6 +88,10 @@ bool EspNowTransport::prepareEspNow() const
         return true;
     }
     initWiFi();
+    if (restrictTxPower)
+    {
+        esp_wifi_set_max_tx_power(34);
+    }
 
     if (esp_now_init() != ESP_OK)
     {
