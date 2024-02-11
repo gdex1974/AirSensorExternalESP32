@@ -5,12 +5,13 @@
 // TODO: Change this to the MAC address of the indoor module
 const std::array<const uint8_t, 6> AppConfig::macAddress = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
 const uint8_t AppConfig::bme280Address = 0x76;
-// Serial1: GPIO23 - RX, GPIO18 - TX
+// Serial 0 used for debug output: GPIO23 - RX, GPIO18 - TX
 const int8_t AppConfig::serial1RxPin = GPIO_NUM_23;
 const int8_t AppConfig::serial1TxPin = GPIO_NUM_18;
-// Serial2: GPIO27 - RX, GPIO26 - TX
-const int8_t AppConfig::serial2RxPin = GPIO_NUM_27;
-const int8_t AppConfig::serial2TxPin = GPIO_NUM_26;
+// Serial port for SPS30: UART number 2, GPIO27 - RX, GPIO26 - TX
+const int8_t AppConfig::Sps30UartNum = 2;
+const int8_t AppConfig::sps30RxPin = GPIO_NUM_27;
+const int8_t AppConfig::sps30TxPin = GPIO_NUM_26;
 // I2C: GPIO33 - SDA, GPIO32 - SCL
 const int8_t AppConfig::SDA = GPIO_NUM_33;
 const int8_t AppConfig::SCL = GPIO_NUM_32;
@@ -20,3 +21,5 @@ const int8_t AppConfig::stepUpPin = GPIO_NUM_12;
 const uint8_t AppConfig::voltagePin = GPIO_NUM_2;
 // Voltage divider ratio
 const float AppConfig::batteryVoltageDivider = 0.6f;
+// Restrict transmission power to 8.5dBm - workaround for Wemos C3Mini v1.0
+const bool AppConfig::restrictTxPower = false;

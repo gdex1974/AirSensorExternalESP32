@@ -20,12 +20,12 @@ namespace
 class ControllerHolder
 {
 public:
-    ControllerHolder(embedded::PersistentStorage& storage, int i2CBusNum, int serialPortNum, int8_t address)
+    ControllerHolder(embedded::PersistentStorage& storage, int i2CBusNum, int serialPortNum, int8_t address, bool restrictTxPower)
         : i2CBus(i2CBusNum)
         , i2CDevice(i2CBus, address)
         , uart2Device(serialPortNum)
         , uart2(uart2Device)
-        , controller(storage, uart2, i2CDevice)
+        , controller(storage, uart2, i2CDevice, restrictTxPower)
     {
         i2CBus.init(AppConfig::SDA, AppConfig::SCL, 100000);
     }
@@ -42,21 +42,35 @@ RTC_DATA_ATTR std::array<uint8_t, 2048> persistentArray;
 std::optional<embedded::PersistentStorage> persistentStorage;
 std::optional<ControllerHolder> driversHolder;
 
-bool wakeUp = false;
+DustMonitorController::ResetReason resetReason = DustMonitorController::ResetReason::PowerOn;
 }
 
 void setup()
 {
-    wakeUp = esp_reset_reason() == ESP_RST_DEEPSLEEP;
-    persistentStorage.emplace(persistentArray, !wakeUp);
+    using ResetReason = DustMonitorController::ResetReason;
+    switch (esp_reset_reason())
+    {
+    case ESP_RST_DEEPSLEEP:
+        resetReason = ResetReason::DeepSleep;
+        break;
+    case ESP_RST_BROWNOUT:
+        resetReason = ResetReason::BrownOut;
+        break;
+    case ESP_RST_POWERON:
+    default:
+        resetReason = ResetReason::PowerOn;
+        break;
+    }
+    persistentStorage.emplace(persistentArray, resetReason != ResetReason::DeepSleep);
 #ifdef DEBUG_SERIAL_OUT
     embedded::PacketUart::UartDevice::init(0, AppConfig::serial1RxPin, AppConfig::serial1TxPin, 115200);
 #endif
-    DEBUG_LOG((wakeUp ? "Wake up after sleep" : "Initial startup"))
-    embedded::PacketUart::UartDevice::init(2, AppConfig::serial2RxPin, AppConfig::serial2TxPin, 115200);
-    driversHolder.emplace(*persistentStorage, 0, 2, AppConfig::bme280Address);
-    if (!driversHolder->getController().setup(wakeUp)) {
-        DEBUG_LOG("Setup failed!");
+    DEBUG_LOG((resetReason == ResetReason::DeepSleep ? "Wake up after sleep" : (resetReason == ResetReason::BrownOut ? "Reset after voltage drop" : "Initial startup")))
+    embedded::PacketUart::UartDevice::init(AppConfig::Sps30UartNum, AppConfig::sps30RxPin, AppConfig::sps30TxPin, 115200);
+    driversHolder.emplace(*persistentStorage, 0, AppConfig::Sps30UartNum, AppConfig::bme280Address, AppConfig::restrictTxPower);
+    if (!driversHolder->getController().setup(resetReason))
+    {
+        DEBUG_LOG("Setup failed!")
     }
 }
 

@@ -6,13 +6,29 @@
 # Note that environment variables can be set in several places
 # See https://docs.gitlab.com/ee/ci/variables/#cicd-variable-precedence
 stages:
-- test
-
-sast:
-  stage: test
+- check-sast
+- build
+variables:
+  GIT_SUBMODULE_STRATEGY: recursive
+build:
+  stage: build
   tags:
-    - sast-runner
-
+  - docker
+  image: espressif/idf:v4.4.6
+  script:
+  - idf.py build
+  artifacts:
+    paths:
+    - build/ExternalAirQualitySensor.bin
+sast:
+  stage: check-sast
+  tags:
+  - sast-runner
+secret_detection:
+  stage: check-sast
+  tags:
+  - sast-runner
 include:
 - template: SAST.gitlab-ci.yml
 - template: Security/SAST.gitlab-ci.yml
+- template: Security/Secret-Detection.gitlab-ci.yml

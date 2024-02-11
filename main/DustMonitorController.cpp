@@ -18,12 +18,14 @@ namespace
 {
 constexpr int bootEstimationMicroseconds = 700000;
 constexpr int sps30MeasurementDuration = 30; //seconds
+constexpr int insufficientPowerThreshold = 50 * 60; //seconds
 
 constexpr float rawToVolts = 3.3f/4095;
 constexpr std::string_view controllerDataTag = "DMC";
 
-void initStepUpControl()
+void initStepUpControl(bool set = false)
 {
+    (void)set;// this is not necessary for ESP32
     const auto stepUpPin = (gpio_num_t)AppConfig::stepUpPin;
     rtc_gpio_init(stepUpPin); //initialize the RTC GPIO port
     rtc_gpio_set_direction(stepUpPin, RTC_GPIO_MODE_OUTPUT_ONLY); //set the port to output only mode
@@ -85,13 +87,19 @@ void correctTime(const int64_t correction)
         DEBUG_LOG("Small correction factor " << correction << " us is skipped")
     }
 }
+
+enum class SensorFlags : uint32_t {
+    BatteryFailure = 1 << 0,
+};
 } // namespace
 
-bool DustMonitorController::setup(bool wakeUp)
+bool DustMonitorController::setup(ResetReason resetReason)
 {
-    initStepUpControl();
+    bool wakeUp = resetReason == ResetReason::DeepSleep;
     if (!wakeUp)
     {
+        initStepUpControl(false);
+        controllerData.insufficientPower = (resetReason == ResetReason::BrownOut);
         switchStepUpConversion(true);
     }
     else
@@ -100,6 +108,7 @@ bool DustMonitorController::setup(bool wakeUp)
         {
             controllerData = *data;
         }
+        initStepUpControl(wakeUp && SPS30Status::Measuring == controllerData.sps30Status);
     }
     sensorPresent = dustData.setup(wakeUp);
     if (!wakeUp)
@@ -122,9 +131,27 @@ uint32_t DustMonitorController::process()
 {
     const auto currentTime = time(nullptr);
     const bool isTimeGood = isTimeSyncronized(currentTime);
-    if (isTimeGood && sensorPresent)
+    if (isTimeGood)
     {
-        processSPS30Measurement();
+        if (controllerData.firstSyncTime == 0)
+        {
+            controllerData.firstSyncTime = currentTime;
+        }
+        if (sensorPresent)
+        {
+            if (!controllerData.insufficientPower)
+            {
+                processSPS30Measurement();
+            }
+            else
+            {
+                switchStepUpConversion(false);
+                if (currentTime - controllerData.firstSyncTime > insufficientPowerThreshold)
+                {
+                    controllerData.insufficientPower = false;
+                }
+            }
+        }
     }
 
     if (transport.getStatus() == EspNowTransport::SendStatus::Idle) // no send attempts after boot
@@ -140,22 +167,13 @@ uint32_t DustMonitorController::process()
         }
         transport.updateView({meteoData.getHumidity(), meteoData.getTemperature(), meteoData.getPressure(),
                              controllerData.pm01, controllerData.pm25, controllerData.pm10,
-                             float(controllerData.voltageRaw) * rawToVolts / AppConfig::batteryVoltageDivider});
+                             float(controllerData.voltageRaw) * rawToVolts / AppConfig::batteryVoltageDivider,
+                                     (controllerData.insufficientPower ? (uint32_t)SensorFlags::BatteryFailure : 0)});
     }
     switch (transport.getStatus())
     {
         case EspNowTransport::SendStatus::Failed:
-            if (++attemptsCounter > 10)
-            {
-                DEBUG_LOG("Too manu attempts, resetting")
-                attemptsCounter = 0;
-                break;
-            }
-            else{
-                DEBUG_LOG("Failed to send data, retry " << attemptsCounter)
-                needSend = true;
-            }
-            return 100;
+            break;
         case EspNowTransport::SendStatus::Requested:
         case EspNowTransport::SendStatus::Awaiting:
             return 1;
@@ -187,29 +205,31 @@ uint32_t DustMonitorController::process()
 
 void DustMonitorController::processSPS30Measurement()
 {
-    if (controllerData.sps30Status == SPS30Status::Measuring
-        && time(nullptr) > controllerData.lastPMMeasureStarted + sps30MeasurementDuration)
+    if (controllerData.sps30Status == SPS30Status::Measuring)
     {
-        uint16_t p1, p25, p10;
-        if (dustData.getMeasureData(p1, p25, p10))
+        if (const auto timestamp = time(nullptr); timestamp >=
+                                                  controllerData.lastPMMeasureStarted + sps30MeasurementDuration)
         {
-            controllerData.pm01 = p1;
-            controllerData.pm25 = p25;
-            controllerData.pm10 = p10;
+            if (uint16_t p1, p25, p10; dustData.getMeasureData(p1, p25, p10))
+            {
+                controllerData.pm01 = p1;
+                controllerData.pm25 = p25;
+                controllerData.pm10 = p10;
+                dustData.stopMeasure();
+            }
+            else
+            {
+                DEBUG_LOG("Failed to obtain PMx data")
+                controllerData.pm01 = -1;
+                controllerData.pm10 = -1;
+                controllerData.pm25 = -1;
+            }
+            dustData.sleep();
+            controllerData.sps30Status = SPS30Status::Sleep;
+            controllerData.voltageRaw = readVoltageRaw();
+            switchStepUpConversion(false);
+            DEBUG_LOG("PM Measurement finished")
         }
-        else
-        {
-            DEBUG_LOG("Failed to obtain PMx data")
-            controllerData.pm01 = -1;
-            controllerData.pm10 = -1;
-            controllerData.pm25 = -1;
-        }
-        dustData.stopMeasure();
-        dustData.sleep();
-        controllerData.sps30Status = SPS30Status::Sleep;
-        controllerData.voltageRaw = readVoltageRaw();
-        switchStepUpConversion(false);
-        DEBUG_LOG("PM Measurement finished")
     }
     else
     {
@@ -233,5 +253,6 @@ void DustMonitorController::processSPS30Measurement()
 bool DustMonitorController::hibernate()
 {
     dustData.hibernate();
+    transport.hibernate();
     return storage.set(controllerDataTag, controllerData);
 }

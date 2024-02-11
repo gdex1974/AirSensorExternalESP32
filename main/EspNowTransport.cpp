@@ -8,6 +8,9 @@
 
 #include <esp_now.h>
 #include <esp_wifi.h>
+#include <variant>
+#include <freertos/task.h>
+#include <freertos/event_groups.h>
 
 #include "Debug.h"
 
@@ -31,31 +34,42 @@ struct CorrectionMessage
     int64_t receiveTime;
 };
 
-union
-{
-    CorrectionMessage correctionMessage;
-    std::array<uint8_t, sizeof(CorrectionMessage)> bytes;
-} correctionData;
+enum class EventType {DataReady, SendCallback, ReceiveCallback, Exit};
 
-volatile EspNowTransport::SendStatus sendStatus = EspNowTransport::SendStatus::Idle;
+struct EventData
+{
+    EventType type = EventType::Exit;
+    std::array<uint8_t, 6> macAddr = {};
+    std::variant<int64_t, esp_now_send_status_t> data;
+};
+
 volatile uint64_t lastPacketMicroseconds = 0;
 volatile int64_t lastPacketTimestamp = 0;
 volatile uint64_t responseMicroseconds = 0;
-volatile int64_t rtcCorrection = 0;
+auto espnowQueue = std::unique_ptr<std::remove_pointer_t<QueueHandle_t>, decltype(&vQueueDelete)>(nullptr, &vQueueDelete);
+EventGroupHandle_t espnowEventGroup = nullptr;
 
 constexpr std::string_view transportDataTag = "ESPN";
 
-void onDataSent(const uint8_t* /*macAddr*/, esp_now_send_status_t status)
+void onDataSent(const uint8_t* macAddr, esp_now_send_status_t status)
 {
-    sendStatus = status != ESP_NOW_SEND_SUCCESS ? EspNowTransport::SendStatus::Failed
-                                                : EspNowTransport::SendStatus::Awaiting;
-    DEBUG_LOG("Last Packet Send Status: " << ((status == ESP_NOW_SEND_SUCCESS) ? "Delivery Success" : "Delivery Fail"))
+    EventData evt;
+    evt.type = EventType::SendCallback;
+    memcpy(evt.macAddr.begin(), macAddr, evt.macAddr.size());
+    evt.data = status;
+    xQueueSend(espnowQueue.get(), &evt, portMAX_DELAY);
 }
 
-void onDataReceive(const uint8_t* /*mac_addr*/, const uint8_t* data, int data_len)
+void onDataReceive(const uint8_t* mac_addr, const uint8_t* data, int data_len)
 {
     if (data_len == sizeof(CorrectionMessage))
     {
+        union
+        {
+            CorrectionMessage correctionMessage;
+            std::array<uint8_t, sizeof(CorrectionMessage)> bytes;
+        } correctionData;
+
         responseMicroseconds = embedded::getMicrosecondTicks();
         memcpy(correctionData.bytes.begin(), data, data_len);
         const auto &remoteReceivedTime = correctionData.correctionMessage.receiveTime;
@@ -64,37 +78,121 @@ void onDataReceive(const uint8_t* /*mac_addr*/, const uint8_t* data, int data_le
         const auto localDelta = static_cast<int64_t>(responseMicroseconds - lastPacketMicroseconds);
 
         const auto correctionFactor = (localDelta - remoteDelta) / 2;
-        rtcCorrection = remoteReceivedTime - lastPacketTimestamp - correctionFactor;
-        sendStatus = EspNowTransport::SendStatus::Completed;
+        const int64_t rtcCorrection = remoteReceivedTime - lastPacketTimestamp - correctionFactor;
+        EventData evt {
+                .type = EventType::ReceiveCallback, .data = rtcCorrection
+        };
+        std::memcpy(evt.macAddr.begin(), mac_addr, evt.macAddr.size());
+        xQueueSend(espnowQueue.get(), &evt, portMAX_DELAY);
     }
     else
     {
-        DEBUG_LOG("Received unexpected data");
+        DEBUG_LOG("Received unexpected data length " << data_len << " from " << embedded::BytesView(const_cast<uint8_t*>(mac_addr), 6) << " expected " << sizeof(CorrectionMessage) << " bytes")
     }
 }
+
+void espnowTask(void *pvParameter)
+{
+    EspNowTransport* transport = reinterpret_cast<EspNowTransport*>(pvParameter);
+    transport->threadFunction();
+}
+
+[[noreturn]] void delayedSend(void* /*pvParameter*/)
+{
+    while(true)
+    {
+        if (xEventGroupWaitBits(espnowEventGroup, BIT0, pdTRUE, pdTRUE, portMAX_DELAY) == BIT0)
+        {
+            embedded::delay(100);
+            EventData evt { .type = EventType::DataReady, .data = 0 };
+            xQueueSend(espnowQueue.get(), &evt, portMAX_DELAY);
+        }
+    }
+}
+
+} // namespace
+
+
+void EspNowTransport::threadFunction()
+{
+    EventData evt;
+    while (xQueueReceive(espnowQueue.get(), &evt, portMAX_DELAY) == pdTRUE) {
+        switch (evt.type) {
+            case EventType::DataReady:
+                sendData();
+                break;
+            case EventType::SendCallback:
+                if (std::holds_alternative<esp_now_send_status_t>(evt.data))
+                {
+                    const auto status = std::get<esp_now_send_status_t>(evt.data) != ESP_NOW_SEND_SUCCESS ?
+                            EspNowTransport::SendStatus::Failed : EspNowTransport::SendStatus::Awaiting;
+                     if (status == EspNowTransport::SendStatus::Failed)
+                     {
+                         DEBUG_LOG("Last Packet Send to " << embedded::BytesView(evt.macAddr) << " delivery fail")
+                         if (attemptsCounter < maxAttempts)
+                         {
+                             DEBUG_LOG("Retrying to send packet to " << embedded::BytesView(evt.macAddr) << " attempt " << (attemptsCounter + 1))
+                             xEventGroupSetBits(espnowEventGroup, BIT0);
+                         }
+                         else
+                         {
+                             DEBUG_LOG("Max delivery attempts to " << embedded::BytesView(evt.macAddr) << " reached")
+                             sendStatus = status;
+                         }
+                     }
+                     else
+                     {
+                         sendStatus = status;
+                         DEBUG_LOG("Last Packet Send to " << embedded::BytesView(evt.macAddr) << " Status: delivery "
+                                                          << ((sendStatus != EspNowTransport::SendStatus::Failed) ?
+                                                              "success" : "fail"))
+                     }
+                }
+                break;
+            case EventType::ReceiveCallback:
+                if (std::holds_alternative<int64_t>(evt.data))
+                {
+                    rtcCorrection = std::get<int64_t>(evt.data);
+                    sendStatus = EspNowTransport::SendStatus::Completed;
+                }
+                break;
+            case EventType::Exit:
+                return;
+        }
+    }
 }
 
 bool EspNowTransport::setup(embedded::CharView serial, bool /*wakeUp*/)
 {
     sps30Serial = serial;
+    espnowQueue.reset(xQueueCreate(6, sizeof(EventData)));
+    espnowEventGroup = xEventGroupCreate();
+    xTaskCreate(espnowTask, "espnowTask", 2048, this, 4, nullptr);
+    xTaskCreate(delayedSend, "delayedSend", 1024, nullptr, 4, nullptr);
     return true;
-
 }
 
-bool EspNowTransport::prepareEspNow() const
+bool EspNowTransport::prepareEspNow()
 {
     if (espNowPrepared)
     {
         return true;
     }
     initWiFi();
+    if (restrictTxPower)
+    {
+        esp_wifi_set_max_tx_power(34);
+    }
 
     if (esp_now_init() != ESP_OK)
     {
         DEBUG_LOG("Error initializing ESP-NOW");
         return false;
     }
-
+    if (espnowQueue == nullptr) {
+        DEBUG_LOG("Failed to create event queue");
+        return false;
+    }
     esp_now_register_send_cb(onDataSent);
     esp_now_register_recv_cb(onDataReceive);
 
@@ -120,6 +218,21 @@ bool EspNowTransport::prepareEspNow() const
 
 void EspNowTransport::updateView(const EspNowTransport::Data &transportData)
 {
+    data = transportData;
+    if (prepareEspNow())
+    {
+        EventData evt { .type = EventType::DataReady, .data = 0 };
+        xQueueSend(espnowQueue.get(), &evt, portMAX_DELAY);
+        sendStatus = SendStatus::Requested;
+    }
+    else
+    {
+        sendStatus = SendStatus::Failed;
+    }
+}
+
+bool EspNowTransport::sendData()
+{
     union
     {
         struct
@@ -133,38 +246,36 @@ void EspNowTransport::updateView(const EspNowTransport::Data &transportData)
             float pressure;
             float voltage;
             int64_t timestamp;
+            uint32_t flags;
         } message;
         std::array<uint8_t, sizeof(message)> bytes;
     } measurementDataMessage;
 
     memcpy(measurementDataMessage.message.spsSerial, sps30Serial.begin(),
            std::min(sizeof(measurementDataMessage.message.spsSerial), (std::size_t)sps30Serial.size()));
-    measurementDataMessage.message.pm01 = transportData.pm01;
-    measurementDataMessage.message.pm25 = transportData.pm25;
-    measurementDataMessage.message.pm10 = transportData.pm10;
-    measurementDataMessage.message.pressure = transportData.pressure;
-    measurementDataMessage.message.humidity = transportData.humidity;
-    measurementDataMessage.message.temperature = transportData.temperature;
-    measurementDataMessage.message.voltage = transportData.batteryVoltage;
+    measurementDataMessage.message.pm01 = data.pm01;
+    measurementDataMessage.message.pm25 = data.pm25;
+    measurementDataMessage.message.pm10 = data.pm10;
+    measurementDataMessage.message.pressure = data.pressure;
+    measurementDataMessage.message.humidity = data.humidity;
+    measurementDataMessage.message.temperature = data.temperature;
+    measurementDataMessage.message.voltage = data.batteryVoltage;
+    measurementDataMessage.message.flags = data.flags;
 
-    if (prepareEspNow())
+    lastPacketMicroseconds = embedded::getMicrosecondTicks();
+    measurementDataMessage.message.timestamp = microsecondsNow();
+    lastPacketTimestamp = measurementDataMessage.message.timestamp;
+    ++attemptsCounter;
+    sendStatus = SendStatus::Requested;
+
+    if (const auto result = esp_now_send(nullptr, measurementDataMessage.bytes.begin(),
+                                   measurementDataMessage.bytes.size()); result != ESP_OK)
     {
-        lastPacketMicroseconds = embedded::getMicrosecondTicks();
-        measurementDataMessage.message.timestamp = microsecondsNow();
-        lastPacketTimestamp = measurementDataMessage.message.timestamp;
-        auto result = esp_now_send(AppConfig::macAddress.begin(), measurementDataMessage.bytes.begin(),
-                                   measurementDataMessage.bytes.size());
-        if (result == ESP_OK)
-        {
-            sendStatus = SendStatus::Requested;
-            return;
-        }
-        else
-        {
-            DEBUG_LOG("Error sending the data");
-        }
+        sendStatus = SendStatus::Failed;
+        DEBUG_LOG("Error sending the data: " << esp_err_to_name(result));
+        return false;
     }
-    sendStatus = SendStatus::Failed;
+    return true;
 }
 
 int64_t EspNowTransport::getCorrection() const
@@ -175,4 +286,15 @@ int64_t EspNowTransport::getCorrection() const
 EspNowTransport::SendStatus EspNowTransport::getStatus() const
 {
     return sendStatus;
+}
+
+bool EspNowTransport::hibernate()
+{
+    sendStatus = SendStatus::Idle;
+    if (espNowPrepared)
+    {
+        esp_now_deinit();
+        esp_wifi_stop();
+    }
+    return true;
 }
