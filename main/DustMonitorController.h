@@ -19,7 +19,7 @@ public:
     : storage(storage)
     , meteoData(storage, i2CHelper)
     , dustData(storage, uart)
-    , transport(restrictTxPower)
+    , transport(storage, restrictTxPower)
     {}
 
     bool setup(ResetReason resetReason);

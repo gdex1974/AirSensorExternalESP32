@@ -10,6 +10,7 @@
 #include <esp_wifi.h>
 #include <variant>
 #include <freertos/task.h>
+#include <freertos/event_groups.h>
 
 #include "Debug.h"
 
@@ -46,6 +47,7 @@ volatile uint64_t lastPacketMicroseconds = 0;
 volatile int64_t lastPacketTimestamp = 0;
 volatile uint64_t responseMicroseconds = 0;
 auto espnowQueue = std::unique_ptr<std::remove_pointer_t<QueueHandle_t>, decltype(&vQueueDelete)>(nullptr, &vQueueDelete);
+EventGroupHandle_t espnowEventGroup = nullptr;
 
 constexpr std::string_view transportDataTag = "ESPN";
 
@@ -89,18 +91,23 @@ void onDataReceive(const uint8_t* mac_addr, const uint8_t* data, int data_len)
     }
 }
 
-void espnow_task(void *pvParameter)
+void espnowTask(void *pvParameter)
 {
     EspNowTransport* transport = reinterpret_cast<EspNowTransport*>(pvParameter);
     transport->threadFunction();
 }
 
-void delayedSend(void* /*pvParameter*/)
+[[noreturn]] void delayedSend(void* /*pvParameter*/)
 {
-    embedded::delay(100);
-    EventData evt { .type = EventType::DataReady, .data = 0 };
-    xQueueSend(espnowQueue.get(), &evt, portMAX_DELAY);
-    vTaskDelete(nullptr);
+    while(true)
+    {
+        if (xEventGroupWaitBits(espnowEventGroup, BIT0, pdTRUE, pdTRUE, portMAX_DELAY) == BIT0)
+        {
+            embedded::delay(100);
+            EventData evt { .type = EventType::DataReady, .data = 0 };
+            xQueueSend(espnowQueue.get(), &evt, portMAX_DELAY);
+        }
+    }
 }
 
 } // namespace
@@ -125,7 +132,7 @@ void EspNowTransport::threadFunction()
                          if (attemptsCounter < maxAttempts)
                          {
                              DEBUG_LOG("Retrying to send packet to " << embedded::BytesView(evt.macAddr) << " attempt " << (attemptsCounter + 1))
-                             xTaskCreate(delayedSend, "delayedSend", 1024, nullptr, 4, nullptr);
+                             xEventGroupSetBits(espnowEventGroup, BIT0);
                          }
                          else
                          {
@@ -158,8 +165,11 @@ void EspNowTransport::threadFunction()
 bool EspNowTransport::setup(embedded::CharView serial, bool /*wakeUp*/)
 {
     sps30Serial = serial;
+    espnowQueue.reset(xQueueCreate(6, sizeof(EventData)));
+    espnowEventGroup = xEventGroupCreate();
+    xTaskCreate(espnowTask, "espnowTask", 2048, this, 4, nullptr);
+    xTaskCreate(delayedSend, "delayedSend", 1024, nullptr, 4, nullptr);
     return true;
-
 }
 
 bool EspNowTransport::prepareEspNow()
@@ -179,7 +189,6 @@ bool EspNowTransport::prepareEspNow()
         DEBUG_LOG("Error initializing ESP-NOW");
         return false;
     }
-    espnowQueue.reset(xQueueCreate(6, sizeof(EventData)));
     if (espnowQueue == nullptr) {
         DEBUG_LOG("Failed to create event queue");
         return false;
@@ -204,7 +213,6 @@ bool EspNowTransport::prepareEspNow()
     }
 
     espNowPrepared = true;
-    xTaskCreate(espnow_task, "espnow_task", 2048, this, 4, nullptr);
     return true;
 }
 
