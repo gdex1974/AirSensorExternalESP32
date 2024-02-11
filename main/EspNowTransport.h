@@ -3,6 +3,11 @@
 #include "MemoryView.h"
 #include <cstdint>
 
+namespace embedded
+{
+class PersistentStorage;
+}
+
 class EspNowTransport {
 public:
     struct Data
@@ -18,7 +23,8 @@ public:
     };
     enum class SendStatus {Idle, Requested, Failed, Awaiting, Completed};
 
-    EspNowTransport(bool restrictTxPower) : restrictTxPower(restrictTxPower) {}
+    EspNowTransport(embedded::PersistentStorage &storage, bool restrictTxPower)
+    : storage(storage), restrictTxPower(restrictTxPower) {}
     bool setup(embedded::CharView serial, bool wakeUp);
     void updateView(const Data& data);
     SendStatus getStatus() const;
@@ -29,6 +35,7 @@ public:
 private:
     bool prepareEspNow();
     bool sendData();
+    embedded::PersistentStorage &storage;
     Data data;
     volatile SendStatus sendStatus = EspNowTransport::SendStatus::Idle;
     mutable bool espNowPrepared = false;
