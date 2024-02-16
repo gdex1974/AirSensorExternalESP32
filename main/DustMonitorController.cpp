@@ -176,7 +176,12 @@ uint32_t DustMonitorController::process()
             break;
         case EspNowTransport::SendStatus::Requested:
         case EspNowTransport::SendStatus::Awaiting:
-            return 1;
+            if (microsecondsNow() - transport.getLastPacketTimestamp() < 1000000)
+            {
+                return 1;
+            }
+            DEBUG_LOG("Internal unit didn't respond.")
+            break;
         case EspNowTransport::SendStatus::Completed:
             correctTime(transport.getCorrection());
             break;

@@ -298,3 +298,8 @@ bool EspNowTransport::hibernate()
     }
     return true;
 }
+
+int64_t EspNowTransport::getLastPacketTimestamp() const
+{
+    return lastPacketTimestamp;
+}
