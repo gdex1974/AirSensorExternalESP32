@@ -32,6 +32,7 @@ public:
     bool hibernate();
     void threadFunction();
 
+    int64_t getLastPacketTimestamp() const;
 private:
     bool prepareEspNow();
     bool sendData();
