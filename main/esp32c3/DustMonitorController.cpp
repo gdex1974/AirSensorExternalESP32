@@ -26,14 +26,10 @@ constexpr std::string_view controllerDataTag = "DMC";
 
 void initStepUpControl(bool set = false)
 {
-    (void)set;// this is not necessary for ESP32
     const auto stepUpPin = (gpio_num_t)AppConfig::stepUpPin;
     embedded::GpioPinDefinition stepUpPinDefinition { static_cast<uint8_t>(stepUpPin) };
     embedded::GpioDigitalPin(stepUpPinDefinition).init( embedded::GpioDigitalPin::Direction::Output);
-    if (set)
-    {
-        embedded::GpioDigitalPin(stepUpPinDefinition).set(true);
-    }
+    embedded::GpioDigitalPin(stepUpPinDefinition).set(set);
     gpio_hold_dis(stepUpPin);
 }
 
