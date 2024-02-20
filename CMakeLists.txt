@@ -16,5 +16,4 @@ file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.${IDF_TARGET}"
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(ExternalAirQualitySensor)
 
-idf_build_set_property(CXX_COMPILE_OPTIONS "-std=gnu++11" REMOVE)
-idf_build_set_property(CXX_COMPILE_OPTIONS "-std=c++17" APPEND)
+idf_build_unset_property(CXX_COMPILE_OPTIONS "-std=gnu++11")
