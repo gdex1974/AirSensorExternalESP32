@@ -11,7 +11,7 @@ ENDIF()
 if ("${IDF_TARGET}" STREQUAL "")
     set(IDF_TARGET "esp32")
 endif()
-file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/main/${IDF_TARGET}/sdkconfig"
+file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.${IDF_TARGET}"
         "${CMAKE_CURRENT_LIST_DIR}/sdkconfig")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(ExternalAirQualitySensor)

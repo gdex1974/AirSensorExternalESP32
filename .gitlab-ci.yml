@@ -8,18 +8,33 @@
 stages:
 - check-sast
 - build
+
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
-build:
+
+build-esp32:
   stage: build
   tags:
   - docker
   image: espressif/idf:v4.4.6
   script:
+  - mkdir -p build && cd build && cmake -DPYTHON_DEPS_CHECKED=1 -DESP_PLATFORM=1 -DCCACHE_ENABLE=0 -DIDF_TARGET=esp32 -G Ninja .. && cd ..
   - idf.py build
   artifacts:
     paths:
     - build/ExternalAirQualitySensor.bin
+build-esp32c3:
+  stage: build
+  tags:
+    - docker
+  image: espressif/idf:v4.4.6
+  script:
+    - mkdir -p build && cd build && cmake -DPYTHON_DEPS_CHECKED=1 -DESP_PLATFORM=1 -DCCACHE_ENABLE=0 -DIDF_TARGET=esp32c3 -G Ninja .. && cd ..
+    - idf.py build
+  artifacts:
+    paths:
+      - build/ExternalAirQualitySensor.bin
+
 sast:
   stage: check-sast
   tags:
