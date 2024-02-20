@@ -6,6 +6,7 @@
 
 #include <esp_attr.h>
 #include <cstdint>
+#include "HardwareSensorControl.h"
 
 class DustMonitorController {
 public:
