@@ -7,7 +7,8 @@ idf_component_register(
         SRCS
         "AppConfig.cpp"
         "AppMain.cpp"
-        "${IDF_TARGET}/DustMonitorController.cpp"
+        "DustMonitorController.cpp"
+        "${IDF_TARGET}/HardwareSensorControl.cpp"
         "EspNowTransport.cpp"
         "PTHProvider.cpp"
         "SPS30DataProvider.cpp"
