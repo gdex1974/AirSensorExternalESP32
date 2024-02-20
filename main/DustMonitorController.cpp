@@ -8,45 +8,16 @@
 #include "AnalogPin.h"
 
 #include "esp32-esp-idf/GpioPinDefinition.h"
-#include "Delays.h"
-
-#include <driver/rtc_io.h>
 
 #include <Debug.h>
 
 namespace
 {
-constexpr int bootEstimationMicroseconds = 700000;
 constexpr int sps30MeasurementDuration = 30; //seconds
 constexpr int insufficientPowerThreshold = 50 * 60; //seconds
 
 constexpr float rawToVolts = 3.3f/4095;
 constexpr std::string_view controllerDataTag = "DMC";
-
-void initStepUpControl(bool set = false)
-{
-    (void)set;// this is not necessary for ESP32
-    const auto stepUpPin = (gpio_num_t)AppConfig::stepUpPin;
-    rtc_gpio_init(stepUpPin); //initialize the RTC GPIO port
-    rtc_gpio_set_direction(stepUpPin, RTC_GPIO_MODE_OUTPUT_ONLY); //set the port to output only mode
-    rtc_gpio_hold_dis(stepUpPin); //disable hold before setting the level
-}
-
-void switchStepUpConversion(bool enable)
-{
-    const auto stepUpPin = (gpio_num_t)AppConfig::stepUpPin;
-    rtc_gpio_set_level(stepUpPin, enable? 1 : 0);
-    if (enable)
-    {
-        embedded::delay(20);
-    }
-}
-
-void holdStepUpConversion()
-{
-    const auto stepUpPin = (gpio_num_t)AppConfig::stepUpPin;
-    rtc_gpio_hold_en(stepUpPin);
-}
 
 bool isTimeSyncronized(time_t time)
 {
@@ -98,9 +69,10 @@ bool DustMonitorController::setup(ResetReason resetReason)
     bool wakeUp = resetReason == ResetReason::DeepSleep;
     if (!wakeUp)
     {
-        initStepUpControl(false);
+        HardwareSensorControl::initStepUpControl(false);
         controllerData.insufficientPower = (resetReason == ResetReason::BrownOut);
-        switchStepUpConversion(true);
+        HardwareSensorControl::activateDeepSleepGpioHold();
+        HardwareSensorControl::switchStepUpConversion(true);
     }
     else
     {
@@ -108,7 +80,7 @@ bool DustMonitorController::setup(ResetReason resetReason)
         {
             controllerData = *data;
         }
-        initStepUpControl(wakeUp && SPS30Status::Measuring == controllerData.sps30Status);
+        HardwareSensorControl::initStepUpControl(SPS30Status::Measuring == controllerData.sps30Status);
     }
     sensorPresent = dustData.setup(wakeUp);
     if (!wakeUp)
@@ -119,7 +91,7 @@ bool DustMonitorController::setup(ResetReason resetReason)
             const auto serial = dustData.getSpsSerial();
             memcpy(controllerData.sps30Serial, serial.begin(), serial.size());
             dustData.sleep();
-            switchStepUpConversion(false);
+            HardwareSensorControl::switchStepUpConversion(false);
         }
     }
     auto meteoResul = meteoData.setup(wakeUp);
@@ -145,7 +117,7 @@ uint32_t DustMonitorController::process()
             }
             else
             {
-                switchStepUpConversion(false);
+                HardwareSensorControl::switchStepUpConversion(false);
                 if (currentTime - controllerData.firstSyncTime > insufficientPowerThreshold)
                 {
                     controllerData.insufficientPower = false;
@@ -193,13 +165,13 @@ uint32_t DustMonitorController::process()
     const int64_t wholeMinutePast = (nowMicroseconds / microsecondsInMinute) * microsecondsInMinute;
     const auto microsecondsTillNextMinute = wholeMinutePast + microsecondsInMinute - nowMicroseconds;
     uint32_t delayTime;
-    if (microsecondsTillNextMinute <= bootEstimationMicroseconds)
+    if (microsecondsTillNextMinute <= HardwareSensorControl::bootEstimationMicroseconds)
     {
-        delayTime = microsecondsInMinute + microsecondsTillNextMinute - bootEstimationMicroseconds;
+        delayTime = microsecondsInMinute + microsecondsTillNextMinute - HardwareSensorControl::bootEstimationMicroseconds;
     }
     else
     {
-        delayTime = microsecondsTillNextMinute - bootEstimationMicroseconds;
+        delayTime = microsecondsTillNextMinute - HardwareSensorControl::bootEstimationMicroseconds;
     }
     if (controllerData.sps30Status == SPS30Status::Measuring)
     {
@@ -217,9 +189,9 @@ void DustMonitorController::processSPS30Measurement()
         {
             if (uint16_t p1, p25, p10; dustData.getMeasureData(p1, p25, p10))
             {
-                controllerData.pm01 = p1;
-                controllerData.pm25 = p25;
-                controllerData.pm10 = p10;
+                controllerData.pm01 = static_cast<int16_t>(p1);
+                controllerData.pm25 = static_cast<int16_t>(p25);
+                controllerData.pm10 = static_cast<int16_t>(p10);
                 dustData.stopMeasure();
             }
             else
@@ -232,7 +204,7 @@ void DustMonitorController::processSPS30Measurement()
             dustData.sleep();
             controllerData.sps30Status = SPS30Status::Sleep;
             controllerData.voltageRaw = readVoltageRaw();
-            switchStepUpConversion(false);
+            HardwareSensorControl::switchStepUpConversion(false);
             DEBUG_LOG("PM Measurement finished")
         }
     }
@@ -245,10 +217,10 @@ void DustMonitorController::processSPS30Measurement()
         if (shallStartMeasurement)
         {
             DEBUG_LOG("Starting PM measurement")
-            switchStepUpConversion(true);
+            HardwareSensorControl::switchStepUpConversion(true);
             dustData.startMeasure();
             controllerData.sps30Status = SPS30Status::Measuring;
-            holdStepUpConversion();
+            HardwareSensorControl::holdStepUpConversion();
             controllerData.voltageRaw = readVoltageRaw();
             controllerData.lastPMMeasureStarted = time(nullptr);
         }
