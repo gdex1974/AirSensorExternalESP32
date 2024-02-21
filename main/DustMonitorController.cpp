@@ -1,4 +1,5 @@
 #include "DustMonitorController.h"
+#include "HardwareSensorControl.h"
 
 #include "TimeFunctions.h"
 #include "AppConfig.h"

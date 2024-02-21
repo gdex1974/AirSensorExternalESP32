@@ -1,12 +1,7 @@
 #pragma once
 
-class HardwareSensorControl
-{
-public:
-    static void initStepUpControl(bool set = false);
-    static void switchStepUpConversion(bool enable);
-    static void holdStepUpConversion();
-    static void activateDeepSleepGpioHold();
-
-    static const int bootEstimationMicroseconds;
-};
+#ifdef IDF_TARGET_ESP32
+#include "esp32/HardwareSensorControl.h"
+#elif defined(IDF_TARGET_ESP32C3)
+#include "esp32c3/HardwareSensorControl.h"
+#endif
