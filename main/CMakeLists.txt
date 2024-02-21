@@ -8,7 +8,6 @@ idf_component_register(
         "AppConfig.cpp"
         "AppMain.cpp"
         "DustMonitorController.cpp"
-        "${IDF_TARGET}/HardwareSensorControl.cpp"
         "EspNowTransport.cpp"
         "PTHProvider.cpp"
         "SPS30DataProvider.cpp"
