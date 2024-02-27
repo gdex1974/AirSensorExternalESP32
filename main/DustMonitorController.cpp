@@ -1,4 +1,5 @@
 #include "DustMonitorController.h"
+#include "HardwareSensorControl.h"
 
 #include "TimeFunctions.h"
 #include "AppConfig.h"
@@ -124,12 +125,13 @@ uint32_t DustMonitorController::process()
                 }
             }
         }
+        needSend = getLocalTime(currentTime).tm_sec == 59;
+    }
+    else
+    {
+        needSend = true;
     }
 
-    if (transport.getStatus() == EspNowTransport::SendStatus::Idle) // no send attempts after boot
-    {
-        needSend = !isTimeGood || getLocalTime(currentTime).tm_sec == 59;
-    }
     if (needSend)
     {
         needSend = false;
@@ -137,42 +139,23 @@ uint32_t DustMonitorController::process()
         {
             meteoData.hibernate();
         }
-        transport.updateView({meteoData.getHumidity(), meteoData.getTemperature(), meteoData.getPressure(),
-                             controllerData.pm01, controllerData.pm25, controllerData.pm10,
-                             float(controllerData.voltageRaw) * rawToVolts / AppConfig::batteryVoltageDivider,
-                                     (controllerData.insufficientPower ? (uint32_t)SensorFlags::BatteryFailure : 0)});
+        transport.sendData(
+                { meteoData.getHumidity(), meteoData.getTemperature(), meteoData.getPressure(), controllerData.pm01
+                  , controllerData.pm25, controllerData.pm10, float(controllerData.voltageRaw) * rawToVolts / AppConfig::batteryVoltageDivider
+                  , (controllerData.insufficientPower ? (uint32_t)SensorFlags::BatteryFailure : 0) });
     }
-    switch (transport.getStatus())
+    if (transport.getStatus() == EspNowTransport::SendStatus::Completed)
     {
-        case EspNowTransport::SendStatus::Failed:
-            break;
-        case EspNowTransport::SendStatus::Requested:
-        case EspNowTransport::SendStatus::Awaiting:
-            if (microsecondsNow() - transport.getLastPacketTimestamp() < 1000000)
-            {
-                return 1;
-            }
-            DEBUG_LOG("Internal unit didn't respond.")
-            break;
-        case EspNowTransport::SendStatus::Completed:
-            correctTime(transport.getCorrection());
-            break;
-        default:
-            break;
+        correctTime(transport.getCorrection());
     }
 
     auto nowMicroseconds = microsecondsNow();
     const int64_t wholeMinutePast = (nowMicroseconds / microsecondsInMinute) * microsecondsInMinute;
     const auto microsecondsTillNextMinute = wholeMinutePast + microsecondsInMinute - nowMicroseconds;
-    uint32_t delayTime;
-    if (microsecondsTillNextMinute <= HardwareSensorControl::bootEstimationMicroseconds)
-    {
-        delayTime = microsecondsInMinute + microsecondsTillNextMinute - HardwareSensorControl::bootEstimationMicroseconds;
-    }
-    else
-    {
-        delayTime = microsecondsTillNextMinute - HardwareSensorControl::bootEstimationMicroseconds;
-    }
+    uint32_t delayTime = (microsecondsTillNextMinute <= HardwareSensorControl::bootEstimationMicroseconds) ?
+                        microsecondsInMinute + microsecondsTillNextMinute : microsecondsTillNextMinute;
+    delayTime -= HardwareSensorControl::bootEstimationMicroseconds;
+
     if (controllerData.sps30Status == SPS30Status::Measuring)
     {
         delayTime = std::min(delayTime, uint32_t(sps30MeasurementDuration * microsecondsInSecond));

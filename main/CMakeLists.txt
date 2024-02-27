@@ -15,3 +15,9 @@ idf_component_register(
         INCLUDE_DIRS
         "."
 )
+
+if ("${IDF_TARGET}" STREQUAL "esp32")
+    target_compile_options(${COMPONENT_LIB} PRIVATE -DIDF_TARGET_ESP32)
+elseif ("${IDF_TARGET}" STREQUAL "esp32c3")
+    target_compile_options(${COMPONENT_LIB} PRIVATE -DIDF_TARGET_ESP32C3)
+endif()

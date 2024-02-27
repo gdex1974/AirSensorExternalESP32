@@ -15,13 +15,14 @@
 
 #include "Debug.h"
 
+using ResetReason = DustMonitorController::ResetReason;
 namespace
 {
 class ControllerHolder
 {
 public:
-    ControllerHolder(embedded::PersistentStorage& storage, int i2CBusNum, int serialPortNum, int8_t address, bool restrictTxPower)
-        : i2CBus(i2CBusNum)
+    ControllerHolder(embedded::PersistentStorage& storage, int serialPortNum, int8_t address, bool restrictTxPower)
+        : i2CBus(0)
         , i2CDevice(i2CBus, address)
         , uart2Device(serialPortNum)
         , uart2(uart2Device)
@@ -40,14 +41,11 @@ private:
 
 RTC_DATA_ATTR std::array<uint8_t, 2048> persistentArray;
 std::optional<embedded::PersistentStorage> persistentStorage;
-std::optional<ControllerHolder> driversHolder;
+std::optional<ControllerHolder> controllerHolder;
 
-DustMonitorController::ResetReason resetReason = DustMonitorController::ResetReason::PowerOn;
-}
-
-void setup()
+ResetReason getResetReason()
 {
-    using ResetReason = DustMonitorController::ResetReason;
+    ResetReason resetReason;
     switch (esp_reset_reason())
     {
     case ESP_RST_DEEPSLEEP:
@@ -61,32 +59,24 @@ void setup()
         resetReason = ResetReason::PowerOn;
         break;
     }
-    persistentStorage.emplace(persistentArray, resetReason != ResetReason::DeepSleep);
+    return resetReason;
+}
+
+bool setup(ResetReason resetReason)
+{
 #ifdef DEBUG_SERIAL_OUT
     embedded::PacketUart::UartDevice::init(0, AppConfig::serial1RxPin, AppConfig::serial1TxPin, 115200);
 #endif
     DEBUG_LOG((resetReason == ResetReason::DeepSleep ? "Wake up after sleep" : (resetReason == ResetReason::BrownOut ? "Reset after voltage drop" : "Initial startup")))
+    persistentStorage.emplace(persistentArray, resetReason != ResetReason::DeepSleep);
     embedded::PacketUart::UartDevice::init(AppConfig::Sps30UartNum, AppConfig::sps30RxPin, AppConfig::sps30TxPin, 115200);
-    driversHolder.emplace(*persistentStorage, 0, AppConfig::Sps30UartNum, AppConfig::bme280Address, AppConfig::restrictTxPower);
-    if (!driversHolder->getController().setup(resetReason))
-    {
-        DEBUG_LOG("Setup failed!")
-    }
+    controllerHolder.emplace(*persistentStorage, AppConfig::Sps30UartNum, AppConfig::bme280Address, AppConfig::restrictTxPower);
+    return controllerHolder->getController().setup(resetReason);
 }
 
-void loop()
-{
-    auto delayTime = driversHolder->getController().process();
-    if (delayTime > 1000)
-    {
-        driversHolder->getController().hibernate();
-        DEBUG_LOG("Going to deep sleep for " << delayTime << " ms")
-        embedded::deepSleep(delayTime);
-    }
-    embedded::delay(delayTime);
 }
 
-extern "C" void app_main()
+extern "C" [[noreturn]] void app_main()
 {
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -94,9 +84,16 @@ extern "C" void app_main()
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK( ret );
-    setup();
-    while (true)
+    ResetReason resetReason = getResetReason();
+    if (!setup(resetReason))
     {
-        loop();
+        DEBUG_LOG("Setup failed. No sensors found of failed to initialize WiFi. Terminating...")
+        embedded::delay(1000);
+        std::terminate();
     }
+
+    const auto delayTime = controllerHolder->getController().process();
+    controllerHolder->getController().hibernate();
+    DEBUG_LOG("Going to deep sleep for " << delayTime << " ms")
+    embedded::deepSleep(delayTime);
 }

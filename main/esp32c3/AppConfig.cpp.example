@@ -10,15 +10,15 @@ const int8_t AppConfig::serial1RxPin = GPIO_NUM_20;
 const int8_t AppConfig::serial1TxPin = GPIO_NUM_21;
 // Serial port for SPS30: UART number 1, GPIO27 - RX, GPIO26 - TX
 const int8_t AppConfig::Sps30UartNum = 1;
-const int8_t AppConfig::sps30RxPin = GPIO_NUM_4;
+const int8_t AppConfig::sps30RxPin = GPIO_NUM_6;
 const int8_t AppConfig::sps30TxPin = GPIO_NUM_5;
 // I2C: GPIO33 - SDA, GPIO32 - SCL
-const int8_t AppConfig::SDA = GPIO_NUM_8;
-const int8_t AppConfig::SCL = GPIO_NUM_10;
+const int8_t AppConfig::SDA = GPIO_NUM_1;
+const int8_t AppConfig::SCL = GPIO_NUM_0;
 // GPIO12 - step up enable
-const int8_t AppConfig::stepUpPin = GPIO_NUM_6;
+const int8_t AppConfig::stepUpPin = GPIO_NUM_7;
 // GPIO2 - input pin to read battery voltage
-const uint8_t AppConfig::voltagePin = GPIO_NUM_3;
+const uint8_t AppConfig::voltagePin = GPIO_NUM_4;
 // Voltage divider ratio
 const float AppConfig::batteryVoltageDivider = 0.6f;
 // Restrict transmission power to 8.5dBm - workaround for Wemos C3Mini v1.0
