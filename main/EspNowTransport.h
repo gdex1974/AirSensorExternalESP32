@@ -26,7 +26,7 @@ public:
     EspNowTransport(embedded::PersistentStorage &storage, bool restrictTxPower)
     : storage(storage), restrictTxPower(restrictTxPower) {}
     bool setup(embedded::CharView serial, bool wakeUp);
-    void updateView(const Data& data);
+    bool sendData(const Data& transportData);
     SendStatus getStatus() const;
     int64_t getCorrection() const;
     bool hibernate();

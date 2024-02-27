@@ -9,7 +9,7 @@ IF(POLICY CMP0012)
     CMAKE_POLICY(SET CMP0012 NEW)
 ENDIF()
 if ("${IDF_TARGET}" STREQUAL "")
-    set(IDF_TARGET "esp32")
+    set(IDF_TARGET "esp32c3")
 endif()
 file(COPY_FILE "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.${IDF_TARGET}"
         "${CMAKE_CURRENT_LIST_DIR}/sdkconfig")

@@ -6,7 +6,6 @@
 
 #include <esp_attr.h>
 #include <cstdint>
-#include "HardwareSensorControl.h"
 
 class DustMonitorController {
 public:
@@ -54,7 +53,6 @@ private:
     PTHProvider meteoData;
     SPS30DataProvider dustData;
     EspNowTransport transport;
-    bool isMeasured = false;
     bool needSend = false;
     bool sensorPresent = false;
 };
