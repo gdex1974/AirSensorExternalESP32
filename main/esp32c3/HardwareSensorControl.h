@@ -11,7 +11,7 @@
 namespace HardwareSensorControl
 {
 
-constexpr int bootEstimationMicroseconds = 500000;
+constexpr int bootEstimationMicroseconds = 450000;
 
 inline void initStepUpControl(bool set)
 {
