@@ -61,8 +61,14 @@ void onDataSent(const uint8_t* macAddr, esp_now_send_status_t status)
     xQueueSend(espnowQueue.get(), &evt, portMAX_DELAY);
 }
 
-void onDataReceive(const uint8_t* mac_addr, const uint8_t* data, int data_len)
+#if __GNUC__ >= 9
+void onDataReceive(const esp_now_recv_info_t * esp_now_info, const uint8_t *data, int data_len)
 {
+    const auto mac_addr = esp_now_info->src_addr;
+#else
+void onDataReceive(const uint8_t * mac_addr, const uint8_t *data, int data_len)
+{
+#endif
     if (data_len == sizeof(CorrectionMessage))
     {
         union
