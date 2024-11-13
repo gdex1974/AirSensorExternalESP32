@@ -12,28 +12,43 @@ stages:
 variables:
   GIT_SUBMODULE_STRATEGY: recursive
 
-build-esp32:
-  stage: build
-  tags:
-  - docker
-  image: espressif/idf:v4.4.6
-  script:
-  - mkdir -p build && cd build && cmake -DPYTHON_DEPS_CHECKED=1 -DESP_PLATFORM=1 -DCCACHE_ENABLE=0 -DIDF_TARGET=esp32 -G Ninja .. && cd ..
-  - idf.py build
-  artifacts:
-    paths:
-    - build/ExternalAirQualitySensor.bin
-build-esp32c3:
+.build_template:
   stage: build
   tags:
     - docker
-  image: espressif/idf:v4.4.6
   script:
-    - mkdir -p build && cd build && cmake -DPYTHON_DEPS_CHECKED=1 -DESP_PLATFORM=1 -DCCACHE_ENABLE=0 -DIDF_TARGET=esp32c3 -G Ninja .. && cd ..
+    - if [ -f sdkconfig ]; then rm sdkconfig; fi
+    - cp sdkconfig.${IDF_TARGET} sdkconfig
+    - mkdir -p build && cd build && cmake -DPYTHON_DEPS_CHECKED=1 -DESP_PLATFORM=1 -DCCACHE_ENABLE=0 -DIDF_TARGET=${IDF_TARGET} -G Ninja .. && cd ..
     - idf.py build
   artifacts:
     paths:
       - build/ExternalAirQualitySensor.bin
+
+build-esp32-idf4:
+  extends: .build_template
+  image: espressif/idf:v4.4.7
+  variables:
+    IDF_TARGET: esp32
+
+build-esp32c3-idf4:
+  extends: .build_template
+  image: espressif/idf:v4.4.7
+  variables:
+    IDF_TARGET: esp32c3
+
+
+build-esp32-idf5:
+  extends: .build_template
+  image: espressif/idf:latest
+  variables:
+    IDF_TARGET: esp32
+
+build-esp32c3-idf5:
+  extends: .build_template
+  image: espressif/idf:latest
+  variables:
+    IDF_TARGET: esp32c3
 
 sast:
   stage: check-sast
