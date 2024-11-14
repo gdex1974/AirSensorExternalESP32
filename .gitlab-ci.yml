@@ -17,8 +17,6 @@ variables:
   tags:
     - docker
   script:
-    - if [ -f sdkconfig ]; then rm sdkconfig; fi
-    - cp sdkconfig.${IDF_TARGET} sdkconfig
     - mkdir -p build && cd build && cmake -DPYTHON_DEPS_CHECKED=1 -DESP_PLATFORM=1 -DCCACHE_ENABLE=0 -DIDF_TARGET=${IDF_TARGET} -G Ninja .. && cd ..
     - idf.py build
   artifacts:
